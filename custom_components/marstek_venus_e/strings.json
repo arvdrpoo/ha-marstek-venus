@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Marstek Venus E",
+        "description": "Enter the IP address of your Marstek Venus E device",
+        "data": {
+          "host": "Device IP Address",
+          "port": "UDP Port",
+          "name": "Device Name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to device. Please check the IP address and ensure the device is on the network.",
+      "timeout": "Connection timed out. Please check your network and device status.",
+      "unknown": "An unexpected error occurred. Please try again."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  }
+}
