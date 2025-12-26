@@ -1,0 +1,25 @@
+services:
+  homeassistant:
+    container_name: homeassistant-test
+    image: homeassistant/home-assistant:latest
+    volumes:
+      # Mount the test config directory
+      # - ./test-ha-config:/config
+      # Mount the integration directly into custom_components
+      - ./custom_components/marstek_venus_e:/config/custom_components/marstek_venus_e:ro
+    environment:
+      - TZ=Europe/Amsterdam
+    ports:
+      - "8123:8123"
+    restart: unless-stopped
+    privileged: false
+
+  # Optional: Add a minimal MQTT broker for testing if needed
+  # mosquitto:
+  #   container_name: mosquitto-test
+  #   image: eclipse-mosquitto:latest
+  #   ports:
+  #     - "1883:1883"
+  #   volumes:
+  #     - ./test-ha-config/mosquitto:/mosquitto/config
+  #   restart: unless-stopped

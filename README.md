@@ -120,14 +120,37 @@ Complete API documentation is available in `docs/MarstekDeviceOpenApi.pdf`.
 
 See [CLAUDE.md](CLAUDE.md) for detailed information about the codebase architecture and development guidelines.
 
-### Testing
+### Testing with Docker
 
-To test the integration:
+Test the integration locally using the included Docker Compose setup:
 
-1. Copy the `custom_components/marstek_venus_e` folder to your Home Assistant config directory
-2. Restart Home Assistant
-3. Add the integration through the UI
-4. Check logs for any errors: Settings > System > Logs
+```bash
+# Start Home Assistant test instance
+docker-compose up -d
+
+# View logs
+docker-compose logs -f homeassistant
+
+# Restart after code changes
+docker-compose restart homeassistant
+
+# Stop test instance
+docker-compose down
+```
+
+Access Home Assistant at http://localhost:8123. The integration is mounted read-only from `custom_components/marstek_venus_e`. First startup takes 1-2 minutes to initialize.
+
+### Testing the API Client
+
+Test the standalone API client without Home Assistant:
+
+```bash
+# Test connection to your device (no dependencies required)
+python3 test_device.py 192.168.1.194
+
+# Run diagnostic tests
+python3 diagnose.py 192.168.1.194
+```
 
 ### Code Structure
 

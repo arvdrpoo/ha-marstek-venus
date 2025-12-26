@@ -8,6 +8,9 @@ __pycache__/
 dist/
 build/
 
+# Home Assistant test artifacts
+test-ha-config/
+
 # IDE
 .vscode/
 .idea/
@@ -18,11 +21,3 @@ build/
 # OS
 .DS_Store
 Thumbs.db
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Home Assistant
-*.log

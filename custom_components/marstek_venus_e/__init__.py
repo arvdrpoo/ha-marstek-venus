@@ -1,4 +1,5 @@
 """The Marstek Venus E integration."""
+import asyncio
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -53,6 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Connect to the device
         await client.connect()
 
+        # Venus E 3 requires 2+ seconds between requests
+        # Config flow just called the API, so wait before calling again
+        await asyncio.sleep(2.5)
+
         # Get device information
         # This also validates that the device is reachable
         device_info = await client.get_device_info()
@@ -66,6 +71,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create the data update coordinator
     coordinator = MarstekDataUpdateCoordinator(hass, client, device_info)
+
+    # Venus E 3 requires 2+ seconds between requests
+    # Wait before first data fetch since we just called get_device_info()
+    await asyncio.sleep(2.5)
 
     # Fetch initial data
     # This ensures we have data before entities are created
