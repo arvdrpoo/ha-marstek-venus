@@ -54,8 +54,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Connect to the device
         await client.connect()
 
-        # Venus E 3 requires 2+ seconds between requests
-        # Config flow just called the API, so wait before calling again
+        # Config flow just validated the connection, so wait before our first call
+        # (Rate limiting only works within a single client instance)
         await asyncio.sleep(2.5)
 
         # Get device information
@@ -72,12 +72,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create the data update coordinator
     coordinator = MarstekDataUpdateCoordinator(hass, client, device_info)
 
-    # Venus E 3 requires 2+ seconds between requests
-    # Wait before first data fetch since we just called get_device_info()
-    await asyncio.sleep(2.5)
-
     # Fetch initial data
     # This ensures we have data before entities are created
+    # Note: Rate limiting is handled automatically by the API client
     await coordinator.async_config_entry_first_refresh()
 
     # Store the coordinator and client in hass.data

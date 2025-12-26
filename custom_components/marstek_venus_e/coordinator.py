@@ -1,5 +1,4 @@
 """Data update coordinator for Marstek Venus E."""
-import asyncio
 import logging
 from datetime import timedelta
 from typing import Any, Dict
@@ -99,11 +98,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Try to get operating mode
             # May not be supported on all Venus E 3 hardware revisions
+            # Note: Rate limiting is handled automatically by the API client
             mode_data = None
             try:
-                # Venus E 3 requires 2+ seconds between requests
-                await asyncio.sleep(2.5)
-
                 _LOGGER.debug("Fetching operating mode")
                 mode_data = await self.client.get_mode()
             except Exception as err:
@@ -118,11 +115,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Try to get energy meter data
             # This may fail if CT sensors are not connected
+            # Note: Rate limiting is handled automatically by the API client
             em_data = None
             try:
-                # Venus E 3 requires 2+ seconds between requests
-                await asyncio.sleep(2.5)
-
                 _LOGGER.debug("Fetching energy meter status")
                 em_data = await self.client.get_em_status()
             except (MarstekConnectionError, MarstekApiError) as err:

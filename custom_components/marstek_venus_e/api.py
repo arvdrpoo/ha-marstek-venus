@@ -2,10 +2,14 @@
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 
 # Default timeout for UDP responses
 TIMEOUT = 10
+
+# Minimum time between requests (Venus E 3 requires 2+ seconds)
+MIN_REQUEST_INTERVAL = 2.5
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -141,6 +145,7 @@ class MarstekApiClient:
         self.port = port
         self.protocol: Optional[MarstekProtocol] = None
         self._request_id = 0  # Counter for generating unique request IDs
+        self._last_request_time = 0.0  # Track last request time for rate limiting
 
     async def connect(self) -> None:
         """
@@ -208,6 +213,17 @@ class MarstekApiClient:
         """
         if not self.protocol or not self.protocol.transport:
             raise MarstekConnectionError("Not connected to device")
+
+        # Rate limiting: Venus E 3 requires 2+ seconds between requests
+        current_time = time.monotonic()
+        elapsed = current_time - self._last_request_time
+        if elapsed < MIN_REQUEST_INTERVAL:
+            sleep_time = MIN_REQUEST_INTERVAL - elapsed
+            _LOGGER.debug("Rate limiting: sleeping %.2fs before next request", sleep_time)
+            await asyncio.sleep(sleep_time)
+
+        # Update last request time
+        self._last_request_time = time.monotonic()
 
         # Generate unique request ID
         request_id = self._get_next_id()
