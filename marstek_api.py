@@ -81,7 +81,12 @@ class MarstekProtocol(asyncio.DatagramProtocol):
             # Find the pending request matching this ID
             future = self.pending_requests.pop(request_id, None)
             if future is None:
-                _LOGGER.warning("Received unexpected response with ID %s", request_id)
+                # ID 0 is often used for unsolicited status updates from the device
+                # Log at debug level to avoid cluttering logs
+                if request_id == 0:
+                    _LOGGER.debug("Received unsolicited message from device: %s", response)
+                else:
+                    _LOGGER.warning("Received unexpected response with ID %s", request_id)
                 return
 
             # Check if response contains an error
