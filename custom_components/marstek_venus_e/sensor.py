@@ -46,19 +46,19 @@ async def async_setup_entry(
     device_info: Dict[str, Any] = data["device_info"]
 
     # Create all sensor entities
+    # Note: Venus E 3 gets all data from ES.GetStatus
+    # Some sensors may show 0 if features aren't connected (e.g., solar panels, load monitoring)
     entities = [
-        # Battery sensors
+        # Battery sensors (from ES.GetStatus)
         BatterySocSensor(coordinator, entry, device_info),
         BatteryCapacitySensor(coordinator, entry, device_info),
-        BatteryPowerSensor(coordinator, entry, device_info),
-        BatteryTemperatureSensor(coordinator, entry, device_info),
 
-        # Power flow sensors
+        # Power flow sensors (from ES.GetStatus)
         PvPowerSensor(coordinator, entry, device_info),
         GridPowerSensor(coordinator, entry, device_info),
         LoadPowerSensor(coordinator, entry, device_info),
 
-        # Energy total sensors
+        # Energy total sensors (from ES.GetStatus)
         TotalPvEnergySensor(coordinator, entry, device_info),
         TotalGridInputEnergySensor(coordinator, entry, device_info),
         TotalGridOutputEnergySensor(coordinator, entry, device_info),

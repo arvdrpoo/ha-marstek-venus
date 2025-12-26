@@ -4,18 +4,17 @@ A custom Home Assistant integration for the Marstek Venus E 3 home battery syste
 
 ## Features
 
-- **Battery Monitoring**: Track battery state of charge, capacity, power, and temperature
+- **Battery Monitoring**: Track battery state of charge and capacity
 - **Power Flow Monitoring**: Monitor solar (PV), grid, and load power in real-time
 - **Energy Statistics**: Track cumulative energy from solar, grid import/export, and load consumption
-- **Operating Mode Control**: Switch between Auto, AI, and Passive modes
 - **Local Control**: Communicates directly with your device over your local network (no cloud required)
 - **Real-time Updates**: Data refreshes every 30 seconds
 
+**Note**: This integration supports all Venus E component functionalities (Battery, ES, EM). Some sensors may show 0 values if optional features aren't connected (e.g., solar panels, load monitoring). Mode control (Auto/AI/Manual) is not supported on Venus E 3 hardware.
+
 ## Supported Devices
 
-- Marstek Venus E 3
-- Marstek Venus C (should work, untested)
-- Other Marstek devices with local UDP API support may work
+- Marstek Venus E 3 (tested and confirmed working)
 
 ## Installation
 
@@ -60,32 +59,24 @@ The integration will validate the connection and create the device with all enti
 
 ## Entities
 
-### Sensors
+### Sensors (9 total)
 
 **Battery Sensors:**
 - `Battery` - Battery state of charge (%)
 - `Battery Capacity` - Current battery capacity (Wh)
-- `Battery Power` - Battery charging/discharging power (W, positive = charging)
-- `Battery Temperature` - Battery temperature (°C)
 
 **Power Flow Sensors:**
-- `Solar Power` - Solar panel power generation (W)
+- `Solar Power` - Solar panel power generation (W) *
 - `Grid Power` - Grid import/export power (W, positive = exporting to grid)
-- `Load Power` - Load consumption power (W)
+- `Load Power` - Load consumption power (W) *
 
 **Energy Total Sensors:**
-- `Total Solar Energy` - Cumulative solar energy generated (Wh)
+- `Total Solar Energy` - Cumulative solar energy generated (Wh) *
 - `Total Grid Import Energy` - Cumulative energy imported from grid (Wh)
 - `Total Grid Export Energy` - Cumulative energy exported to grid (Wh)
-- `Total Load Energy` - Cumulative load consumption (Wh)
+- `Total Load Energy` - Cumulative load consumption (Wh) *
 
-### Controls
-
-**Select Entity:**
-- `Operating Mode` - Switch between Auto, AI, and Passive modes
-  - **Auto**: Automatic mode - device manages itself
-  - **AI**: AI-based optimization mode
-  - **Passive**: Manual power control mode (set to 0W standby by default)
+\* May show 0 if optional components are not connected
 
 ## API Information
 
@@ -110,11 +101,6 @@ Complete API documentation is available in `docs/MarstekDeviceOpenApi.pdf`.
 - Ensure the device's UDP API hasn't been disabled in the mobile app
 - Try reloading the integration from Settings > Devices & Services
 
-### Passive Mode Not Working as Expected
-
-- Passive mode defaults to 0W with a 300-second countdown
-- For custom power settings, advanced configuration will be added in a future release
-- Consider using Auto or AI mode for typical operation
 
 ## Development
 
