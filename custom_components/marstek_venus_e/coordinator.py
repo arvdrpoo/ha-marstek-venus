@@ -97,14 +97,24 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 "rated_capacity": None,
             }
 
-            # Venus E 3 doesn't support ES.GetMode
-            # Mode control not available on this model
-            mode_data = {
-                "mode": "Unknown",
-                "ongrid_power": es_data.get("ongrid_power"),
-                "offgrid_power": es_data.get("offgrid_power"),
-                "bat_soc": es_data.get("bat_soc"),
-            }
+            # Try to get operating mode
+            # May not be supported on all Venus E 3 hardware revisions
+            mode_data = None
+            try:
+                # Venus E 3 requires 2+ seconds between requests
+                await asyncio.sleep(2.5)
+
+                _LOGGER.debug("Fetching operating mode")
+                mode_data = await self.client.get_mode()
+            except Exception as err:
+                _LOGGER.debug("Operating mode not available: %s", err)
+                # Fallback mode data if not supported
+                mode_data = {
+                    "mode": "Unknown",
+                    "ongrid_power": es_data.get("ongrid_power"),
+                    "offgrid_power": es_data.get("offgrid_power"),
+                    "bat_soc": es_data.get("bat_soc"),
+                }
 
             # Try to get energy meter data
             # This may fail if CT sensors are not connected

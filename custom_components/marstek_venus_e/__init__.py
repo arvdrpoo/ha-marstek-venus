@@ -14,8 +14,7 @@ from .coordinator import MarstekDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 # List of platforms this integration provides
-# Venus E 3 doesn't support mode control, so only sensor platform is available
-PLATFORMS = [Platform.SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.SELECT]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

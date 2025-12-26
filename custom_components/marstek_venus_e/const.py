@@ -20,7 +20,7 @@ MODE_MANUAL = "Manual"
 MODE_PASSIVE = "Passive"
 
 # All supported modes for select entity
-MODES = [MODE_AUTO, MODE_AI, MODE_PASSIVE]
+MODES = [MODE_AUTO, MODE_AI, MODE_MANUAL, MODE_PASSIVE]
 
 # Platforms
 PLATFORMS = ["sensor", "select"]

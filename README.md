@@ -10,7 +10,7 @@ A custom Home Assistant integration for the Marstek Venus E 3 home battery syste
 - **Local Control**: Communicates directly with your device over your local network (no cloud required)
 - **Real-time Updates**: Data refreshes every 30 seconds
 
-**Note**: This integration supports all Venus E component functionalities (Battery, ES, EM). Some sensors may show 0 values if optional features aren't connected (e.g., solar panels, load monitoring). Mode control (Auto/AI/Manual) is not supported on Venus E 3 hardware.
+**Note**: This integration supports all Venus E component functionalities (Battery, ES, EM). Some sensors may show 0 values if optional features aren't connected (e.g., solar panels, load monitoring). Mode control may not be available on all Venus E 3 hardware revisions.
 
 ## Supported Devices
 
@@ -77,6 +77,17 @@ The integration will validate the connection and create the device with all enti
 - `Total Load Energy` - Cumulative load consumption (Wh) *
 
 \* May show 0 if optional components are not connected
+
+### Controls
+
+**Select Entity:**
+- `Operating Mode` - Switch between operating modes **
+  - **Auto**: Automatic mode - device manages itself
+  - **AI**: AI-based optimization mode
+  - **Manual**: Manual power control mode with scheduling
+  - **Passive**: Direct power control mode (defaults to 0W standby)
+
+\*\* Mode control may not be supported on all Venus E 3 hardware revisions. If unavailable, the mode will show as "Unknown".
 
 ## API Information
 

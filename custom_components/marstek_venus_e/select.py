@@ -48,9 +48,8 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
     This entity allows users to switch between operating modes:
     - Auto: Automatic mode
     - AI: AI-based optimization
-    - Passive: Direct power control (requires power setting)
-
-    Manual mode is excluded in v1 as it requires scheduling configuration.
+    - Manual: Manual power control mode
+    - Passive: Direct power control mode
     """
 
     def __init__(
@@ -127,7 +126,7 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         refreshes the coordinator data.
 
         Args:
-            option: The selected mode ("Auto", "AI", or "Passive")
+            option: The selected mode ("Auto", "AI", "Manual", or "Passive")
         """
         _LOGGER.info("Changing operating mode to: %s", option)
 
@@ -139,10 +138,14 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
             elif option == MODE_AI:
                 config = {"ai_cfg": {"enable": 1}}
 
+            elif option == MODE_MANUAL:
+                # Manual mode with default configuration
+                # User can configure power and time settings via service calls
+                config = {"manual_cfg": {"enable": 1}}
+
             elif option == MODE_PASSIVE:
                 # Passive mode requires power and countdown parameters
                 # Use defaults: 0W (standby) with 300 second countdown
-                # User can adjust these via service calls in future versions
                 config = {"passive_cfg": {"power": 0, "cd_time": 300}}
 
             else:
