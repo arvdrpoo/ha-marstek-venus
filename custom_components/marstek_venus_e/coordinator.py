@@ -93,17 +93,21 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             try:
                 _LOGGER.debug("Fetching battery status")
                 bat_data = await self.client.get_bat_status()
+                # Map bat_capacity to show TOTAL capacity (rated_capacity)
+                # bat_capacity from Bat.GetStatus is "remaining" not "total"
+                if bat_data and "rated_capacity" in bat_data:
+                    bat_data["bat_capacity"] = bat_data["rated_capacity"]
             except (MarstekConnectionError, MarstekApiError, TimeoutError, Exception) as err:
                 _LOGGER.debug("Bat.GetStatus not available, using ES data: %s", err)
                 # Fallback: Use ES data for battery sensors
                 bat_data = {
                     "soc": es_data.get("bat_soc"),
-                    "bat_capacity": es_data.get("bat_cap"),
+                    "bat_capacity": es_data.get("bat_cap"),  # This is total capacity from ES
                     # Other battery fields not available on Venus E 3
                     "charg_flag": None,
                     "dischrg_flag": None,
                     "bat_temp": None,
-                    "rated_capacity": None,
+                    "rated_capacity": es_data.get("bat_cap"),  # Same as bat_capacity
                 }
 
             # Try to get operating mode
