@@ -139,14 +139,6 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         # Icon for the entity
         self._attr_icon = "mdi:battery-sync"
 
-        # Track if mode control is supported
-        self._mode_control_supported = True
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return super().available and self._mode_control_supported
-
     @property
     def current_option(self) -> str:
         """
@@ -222,13 +214,10 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
 
         except asyncio.TimeoutError:
             _LOGGER.warning(
-                "Timeout setting mode to %s. Your Venus E 3 hardware does not support "
-                "mode control (ES.SetMode). The mode selector entity will be disabled.",
+                "Timeout setting mode to %s. Your Venus E 3 hardware may not support "
+                "mode control (ES.SetMode).",
                 option
             )
-            # Disable the entity since mode control is not supported
-            self._mode_control_supported = False
-            self.async_write_ha_state()
 
         except MarstekApiError as err:
             _LOGGER.error("Error setting mode: %s", err)
@@ -326,12 +315,10 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
 
         except asyncio.TimeoutError:
             _LOGGER.warning(
-                "Timeout setting mode to %s. Your Venus E 3 hardware does not support "
-                "mode control (ES.SetMode). The mode selector entity will be disabled.",
+                "Timeout setting mode to %s. Your Venus E 3 hardware may not support "
+                "mode control (ES.SetMode).",
                 mode
             )
-            self._mode_control_supported = False
-            self.async_write_ha_state()
 
         except MarstekApiError as err:
             _LOGGER.error("Error setting mode to %s: %s", mode, err)
