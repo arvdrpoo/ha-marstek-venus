@@ -93,7 +93,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             try:
                 _LOGGER.debug("Fetching battery status")
                 bat_data = await self.client.get_bat_status()
-            except (MarstekConnectionError, MarstekApiError) as err:
+            except (MarstekConnectionError, MarstekApiError, TimeoutError, Exception) as err:
                 _LOGGER.debug("Bat.GetStatus not available, using ES data: %s", err)
                 # Fallback: Use ES data for battery sensors
                 bat_data = {
@@ -133,33 +133,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             except (MarstekConnectionError, MarstekApiError) as err:
                 _LOGGER.debug("Energy meter not available: %s", err)
 
-            # Try to get WiFi status
-            # Note: Rate limiting is handled automatically by the API client
+            # Skip optional API calls to reduce update time
+            # WiFi, Bluetooth, and PV status rarely change and take extra time
+            # These can be added back if needed, but would increase update cycle to 17+ seconds
             wifi_data = None
-            try:
-                _LOGGER.debug("Fetching WiFi status")
-                wifi_data = await self.client.get_wifi_status()
-            except (MarstekConnectionError, MarstekApiError) as err:
-                _LOGGER.debug("WiFi status not available: %s", err)
-
-            # Try to get Bluetooth status
-            # Note: Rate limiting is handled automatically by the API client
             ble_data = None
-            try:
-                _LOGGER.debug("Fetching Bluetooth status")
-                ble_data = await self.client.get_ble_status()
-            except (MarstekConnectionError, MarstekApiError) as err:
-                _LOGGER.debug("Bluetooth status not available: %s", err)
-
-            # Try to get PV (solar) status
-            # Venus C/E models don't have PV component, Venus D does
-            # Note: Rate limiting is handled automatically by the API client
             pv_data = None
-            try:
-                _LOGGER.debug("Fetching PV status")
-                pv_data = await self.client.get_pv_status()
-            except (MarstekConnectionError, MarstekApiError) as err:
-                _LOGGER.debug("PV status not available (normal for Venus C/E): %s", err)
 
             # Return all the data as a dictionary
             # Entities will access this via self.coordinator.data
