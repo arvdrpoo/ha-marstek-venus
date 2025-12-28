@@ -7,8 +7,11 @@ from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
 
 from .api import MarstekApiClient, MarstekApiError
 from .const import DOMAIN, MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE, MODES
@@ -40,6 +43,43 @@ async def async_setup_entry(
 
     # Create the mode select entity
     async_add_entities([MarstekModeSelect(coordinator, client, entry, device_info)])
+
+    # Register entity platform services for advanced mode control
+    platform = entity_platform.current_platform.get()
+
+    platform.async_register_entity_service(
+        "set_mode_auto",
+        {},
+        "async_set_auto_mode",
+    )
+
+    platform.async_register_entity_service(
+        "set_mode_ai",
+        {},
+        "async_set_ai_mode",
+    )
+
+    platform.async_register_entity_service(
+        "set_mode_manual",
+        {
+            vol.Required("time_slot"): cv.positive_int,
+            vol.Required("start_time"): str,
+            vol.Required("end_time"): str,
+            vol.Required("power"): int,
+            vol.Required("days"): [str],
+            vol.Optional("enabled", default=True): cv.boolean,
+        },
+        "async_set_manual_mode",
+    )
+
+    platform.async_register_entity_service(
+        "set_mode_passive",
+        {
+            vol.Required("power"): int,
+            vol.Required("countdown"): cv.positive_int,
+        },
+        "async_set_passive_mode",
+    )
 
 
 class MarstekModeSelect(CoordinatorEntity, SelectEntity):
@@ -192,3 +232,106 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
 
         except MarstekApiError as err:
             _LOGGER.error("Error setting mode: %s", err)
+
+    async def async_set_auto_mode(self) -> None:
+        """Set Auto mode via service call."""
+        _LOGGER.info("Setting Auto mode via service call")
+        config = {"auto_cfg": {"enable": 1}}
+        await self._set_mode_internal(MODE_AUTO, config)
+
+    async def async_set_ai_mode(self) -> None:
+        """Set AI mode via service call."""
+        _LOGGER.info("Setting AI mode via service call")
+        config = {"ai_cfg": {"enable": 1}}
+        await self._set_mode_internal(MODE_AI, config)
+
+    async def async_set_manual_mode(
+        self,
+        time_slot: int,
+        start_time: str,
+        end_time: str,
+        power: int,
+        days: list,
+        enabled: bool = True
+    ) -> None:
+        """
+        Set Manual mode with full configuration via service call.
+
+        Args:
+            time_slot: Time period number (0-9)
+            start_time: Start time in HH:MM format
+            end_time: End time in HH:MM format
+            power: Power setting in watts (negative = charge, positive = discharge)
+            days: List of day codes (mon, tue, wed, thu, fri, sat, sun)
+            enabled: Whether to enable this schedule
+        """
+        _LOGGER.info(
+            "Setting Manual mode: slot %d, %s-%s, %dW, days=%s, enabled=%s",
+            time_slot, start_time, end_time, power, days, enabled
+        )
+
+        # Convert day names to week_set bitmask
+        # Bit 0 = Monday, Bit 6 = Sunday
+        day_map = {
+            "mon": 0, "tue": 1, "wed": 2, "thu": 3,
+            "fri": 4, "sat": 5, "sun": 6
+        }
+        week_set = 0
+        for day in days:
+            if day.lower() in day_map:
+                week_set |= (1 << day_map[day.lower()])
+
+        config = {
+            "manual_cfg": {
+                "time_num": time_slot,
+                "start_time": start_time,
+                "end_time": end_time,
+                "week_set": week_set,
+                "power": power,
+                "enable": 1 if enabled else 0
+            }
+        }
+        await self._set_mode_internal(MODE_MANUAL, config)
+
+    async def async_set_passive_mode(self, power: int, countdown: int) -> None:
+        """
+        Set Passive mode with power and countdown via service call.
+
+        Args:
+            power: Power setting in watts (negative = charge, positive = discharge)
+            countdown: Duration in seconds
+        """
+        _LOGGER.info("Setting Passive mode: %dW for %ds", power, countdown)
+        config = {"passive_cfg": {"power": power, "cd_time": countdown}}
+        await self._set_mode_internal(MODE_PASSIVE, config)
+
+    async def _set_mode_internal(self, mode: str, config: Dict[str, Any]) -> None:
+        """
+        Internal method to set mode with given configuration.
+
+        Args:
+            mode: Mode name
+            config: Mode configuration dictionary
+        """
+        try:
+            success = await self._client.set_mode(mode, config)
+
+            if not success:
+                _LOGGER.error("Failed to set mode to %s", mode)
+                return
+
+            # Refresh coordinator data
+            await self.coordinator.async_request_refresh()
+            _LOGGER.info("Successfully set mode to %s", mode)
+
+        except asyncio.TimeoutError:
+            _LOGGER.warning(
+                "Timeout setting mode to %s. Your Venus E 3 hardware does not support "
+                "mode control (ES.SetMode). The mode selector entity will be disabled.",
+                mode
+            )
+            self._mode_control_supported = False
+            self.async_write_ha_state()
+
+        except MarstekApiError as err:
+            _LOGGER.error("Error setting mode to %s: %s", mode, err)

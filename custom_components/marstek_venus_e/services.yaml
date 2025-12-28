@@ -1,0 +1,120 @@
+set_mode_auto:
+  name: Set Auto Mode
+  description: Enable automatic mode operation
+  target:
+    entity:
+      integration: marstek_venus_e
+      domain: select
+
+set_mode_ai:
+  name: Set AI Mode
+  description: Enable AI-based optimization mode
+  target:
+    entity:
+      integration: marstek_venus_e
+      domain: select
+
+set_mode_manual:
+  name: Set Manual Mode
+  description: Configure manual mode with time-based power schedule
+  target:
+    entity:
+      integration: marstek_venus_e
+      domain: select
+  fields:
+    time_slot:
+      name: Time Slot Number
+      description: Time period number (0-9)
+      required: true
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 9
+          mode: box
+    start_time:
+      name: Start Time
+      description: Schedule start time (HH:MM format)
+      required: true
+      example: "08:30"
+      selector:
+        time:
+    end_time:
+      name: End Time
+      description: Schedule end time (HH:MM format)
+      required: true
+      example: "20:30"
+      selector:
+        time:
+    power:
+      name: Power Setting
+      description: Power setting in watts (negative = charge, positive = discharge)
+      required: true
+      example: 100
+      selector:
+        number:
+          min: -5000
+          max: 5000
+          unit_of_measurement: W
+          mode: box
+    days:
+      name: Days of Week
+      description: Days when this schedule is active
+      required: true
+      example: ["mon", "tue", "wed", "thu", "fri"]
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: mon
+            - label: Tuesday
+              value: tue
+            - label: Wednesday
+              value: wed
+            - label: Thursday
+              value: thu
+            - label: Friday
+              value: fri
+            - label: Saturday
+              value: sat
+            - label: Sunday
+              value: sun
+    enabled:
+      name: Enable Schedule
+      description: Enable or disable this time schedule
+      required: false
+      default: true
+      selector:
+        boolean:
+
+set_mode_passive:
+  name: Set Passive Mode
+  description: Set direct power control with countdown timer
+  target:
+    entity:
+      integration: marstek_venus_e
+      domain: select
+  fields:
+    power:
+      name: Power Setting
+      description: Power setting in watts (negative = charge, positive = discharge)
+      required: true
+      example: 100
+      selector:
+        number:
+          min: -5000
+          max: 5000
+          unit_of_measurement: W
+          mode: box
+    countdown:
+      name: Countdown Duration
+      description: How long to maintain this power setting (in seconds)
+      required: true
+      example: 3600
+      selector:
+        number:
+          min: 1
+          max: 86400
+          unit_of_measurement: s
+          mode: box
