@@ -74,6 +74,7 @@ async def async_setup_entry(
         # Battery sensors (from Bat.GetStatus / ES.GetStatus)
         BatterySocSensor(coordinator, entry, device_info, main_device_info),
         BatteryCapacitySensor(coordinator, entry, device_info, main_device_info),
+        BatteryTotalCapacitySensor(coordinator, entry, device_info, main_device_info),
         BatteryPowerSensor(coordinator, entry, device_info, main_device_info),
         BatteryTemperatureSensor(coordinator, entry, device_info, main_device_info),
         BatteryChargeFlagSensor(coordinator, entry, device_info, main_device_info),
@@ -219,7 +220,7 @@ class BatterySocSensor(MarstekSensorBase):
 
 
 class BatteryCapacitySensor(MarstekSensorBase):
-    """Battery Capacity sensor."""
+    """Battery Remaining Capacity sensor (varies with SOC)."""
 
     def __init__(
         self,
@@ -238,7 +239,32 @@ class BatteryCapacitySensor(MarstekSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
+        # This is remaining capacity (Wh) from Bat.GetStatus
         return self._get_value("bat", "bat_capacity")
+
+
+class BatteryTotalCapacitySensor(MarstekSensorBase):
+    """Battery Total Capacity sensor from ES.GetStatus."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info_dict, "battery_total_capacity", "Battery Total Capacity", device_info)
+
+        self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        # This is total capacity (Wh) from ES.GetStatus
+        return self._get_value("es", "bat_cap")
 
 
 class BatteryPowerSensor(MarstekSensorBase):
