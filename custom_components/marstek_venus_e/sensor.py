@@ -45,50 +45,72 @@ async def async_setup_entry(
     coordinator: MarstekDataUpdateCoordinator = data["coordinator"]
     device_info: Dict[str, Any] = data["device_info"]
 
+    # Extract device identifiers for creating device info
+    wifi_mac = device_info.get("wifi_mac", "unknown")
+    device_model = device_info.get("device", "VenusE")
+
+    # Create device info for main Marstek device
+    main_device_info = DeviceInfo(
+        identifiers={(DOMAIN, wifi_mac)},
+        name=f"Marstek {device_model}",
+        manufacturer="Marstek",
+        model=device_model,
+        sw_version=str(device_info.get("ver", "Unknown")),
+    )
+
+    # Create device info for CT Meter (separate device)
+    ct_device_info = DeviceInfo(
+        identifiers={(DOMAIN, f"{wifi_mac}_ct")},
+        name=f"Marstek {device_model} - CT Meter",
+        manufacturer="Marstek",
+        model="CT Clamps",
+        via_device=(DOMAIN, wifi_mac),  # Link to main device
+    )
+
     # Create all sensor entities
     # Note: Venus E 3 gets all data from ES.GetStatus
     # Some sensors may show 0 if features aren't connected (e.g., solar panels, load monitoring)
     entities = [
         # Battery sensors (from Bat.GetStatus / ES.GetStatus)
-        BatterySocSensor(coordinator, entry, device_info),
-        BatteryCapacitySensor(coordinator, entry, device_info),
-        BatteryPowerSensor(coordinator, entry, device_info),
-        BatteryTemperatureSensor(coordinator, entry, device_info),
-        BatteryChargeFlagSensor(coordinator, entry, device_info),
-        BatteryDischargeFlagSensor(coordinator, entry, device_info),
-        BatteryRatedCapacitySensor(coordinator, entry, device_info),
+        BatterySocSensor(coordinator, entry, device_info, main_device_info),
+        BatteryCapacitySensor(coordinator, entry, device_info, main_device_info),
+        BatteryPowerSensor(coordinator, entry, device_info, main_device_info),
+        BatteryTemperatureSensor(coordinator, entry, device_info, main_device_info),
+        BatteryChargeFlagSensor(coordinator, entry, device_info, main_device_info),
+        BatteryDischargeFlagSensor(coordinator, entry, device_info, main_device_info),
+        BatteryRatedCapacitySensor(coordinator, entry, device_info, main_device_info),
 
         # Power flow sensors (from ES.GetStatus)
-        PvPowerSensor(coordinator, entry, device_info),
-        GridPowerSensor(coordinator, entry, device_info),
-        LoadPowerSensor(coordinator, entry, device_info),
+        PvPowerSensor(coordinator, entry, device_info, main_device_info),
+        GridPowerSensor(coordinator, entry, device_info, main_device_info),
+        LoadPowerSensor(coordinator, entry, device_info, main_device_info),
 
         # PV (solar) sensors (from PV.GetStatus - Venus D only)
-        PvVoltageSensor(coordinator, entry, device_info),
-        PvCurrentSensor(coordinator, entry, device_info),
+        PvVoltageSensor(coordinator, entry, device_info, main_device_info),
+        PvCurrentSensor(coordinator, entry, device_info, main_device_info),
 
         # Energy total sensors (from ES.GetStatus)
-        TotalPvEnergySensor(coordinator, entry, device_info),
-        TotalGridInputEnergySensor(coordinator, entry, device_info),
-        TotalGridOutputEnergySensor(coordinator, entry, device_info),
-        TotalLoadEnergySensor(coordinator, entry, device_info),
+        TotalPvEnergySensor(coordinator, entry, device_info, main_device_info),
+        TotalGridInputEnergySensor(coordinator, entry, device_info, main_device_info),
+        TotalGridOutputEnergySensor(coordinator, entry, device_info, main_device_info),
+        TotalLoadEnergySensor(coordinator, entry, device_info, main_device_info),
 
         # Operating mode sensor (from ES.GetMode)
-        OperatingModeSensor(coordinator, entry, device_info),
+        OperatingModeSensor(coordinator, entry, device_info, main_device_info),
 
-        # Energy meter sensors (from EM.GetStatus)
-        CtStateSensor(coordinator, entry, device_info),
-        PhaseAPowerSensor(coordinator, entry, device_info),
-        PhaseBPowerSensor(coordinator, entry, device_info),
-        PhaseCPowerSensor(coordinator, entry, device_info),
-        TotalCtPowerSensor(coordinator, entry, device_info),
+        # Energy meter sensors (from EM.GetStatus) - CT Meter device
+        CtStateSensor(coordinator, entry, device_info, ct_device_info),
+        PhaseAPowerSensor(coordinator, entry, device_info, ct_device_info),
+        PhaseBPowerSensor(coordinator, entry, device_info, ct_device_info),
+        PhaseCPowerSensor(coordinator, entry, device_info, ct_device_info),
+        TotalCtPowerSensor(coordinator, entry, device_info, ct_device_info),
 
         # WiFi sensors (from WiFi.GetStatus)
-        WifiSignalSensor(coordinator, entry, device_info),
-        WifiSsidSensor(coordinator, entry, device_info),
+        WifiSignalSensor(coordinator, entry, device_info, main_device_info),
+        WifiSsidSensor(coordinator, entry, device_info, main_device_info),
 
         # Bluetooth sensor (from BLE.GetStatus)
-        BluetoothStateSensor(coordinator, entry, device_info),
+        BluetoothStateSensor(coordinator, entry, device_info, main_device_info),
     ]
 
     # Add all entities to Home Assistant
@@ -111,9 +133,10 @@ class MarstekSensorBase(CoordinatorEntity, SensorEntity):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
         sensor_type: str,
         name: str,
+        device_info: DeviceInfo,
     ) -> None:
         """
         Initialize the sensor.
@@ -121,16 +144,16 @@ class MarstekSensorBase(CoordinatorEntity, SensorEntity):
         Args:
             coordinator: The data update coordinator
             entry: Config entry
-            device_info: Device information dictionary
+            device_info_dict: Device information dictionary (for unique ID)
             sensor_type: Unique identifier for this sensor type
             name: Human-readable name for the sensor
+            device_info: DeviceInfo object for linking to device
         """
         super().__init__(coordinator)
 
         # Extract device identifiers
         self._attr_has_entity_name = True
-        wifi_mac = device_info.get("wifi_mac", "unknown")
-        device_model = device_info.get("device", "VenusE")
+        wifi_mac = device_info_dict.get("wifi_mac", "unknown")
 
         # Set unique ID (required for entities)
         # Format: {wifi_mac}_{sensor_type}
@@ -140,13 +163,7 @@ class MarstekSensorBase(CoordinatorEntity, SensorEntity):
         self._attr_name = name
 
         # Link this entity to the device in the device registry
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, wifi_mac)},
-            name=f"Marstek {device_model}",
-            manufacturer="Marstek",
-            model=device_model,
-            sw_version=str(device_info.get("ver", "Unknown")),
-        )
+        self._attr_device_info = device_info
 
     def _get_value(self, *keys: str, default: Any = None) -> Any:
         """
@@ -184,10 +201,11 @@ class BatterySocSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_soc", "Battery")
+        super().__init__(coordinator, entry, device_info_dict, "battery_soc", "Battery", device_info)
 
         # Set sensor attributes
         self._attr_device_class = SensorDeviceClass.BATTERY
@@ -207,10 +225,11 @@ class BatteryCapacitySensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_capacity", "Battery Capacity")
+        super().__init__(coordinator, entry, device_info_dict, "battery_capacity", "Battery Capacity", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -229,10 +248,11 @@ class BatteryPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_power", "Battery Power")
+        super().__init__(coordinator, entry, device_info_dict, "battery_power", "Battery Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -251,10 +271,11 @@ class BatteryTemperatureSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_temperature", "Battery Temperature")
+        super().__init__(coordinator, entry, device_info_dict, "battery_temperature", "Battery Temperature", device_info)
 
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -274,10 +295,11 @@ class BatteryChargeFlagSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_charge_flag", "Battery Charge Enabled")
+        super().__init__(coordinator, entry, device_info_dict, "battery_charge_flag", "Battery Charge Enabled", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_options = ["Enabled", "Disabled", "Unknown"]
@@ -299,10 +321,11 @@ class BatteryDischargeFlagSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_discharge_flag", "Battery Discharge Enabled")
+        super().__init__(coordinator, entry, device_info_dict, "battery_discharge_flag", "Battery Discharge Enabled", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_options = ["Enabled", "Disabled", "Unknown"]
@@ -324,10 +347,11 @@ class BatteryRatedCapacitySensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "battery_rated_capacity", "Battery Rated Capacity")
+        super().__init__(coordinator, entry, device_info_dict, "battery_rated_capacity", "Battery Rated Capacity", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -352,10 +376,11 @@ class PvPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "pv_power", "Solar Power")
+        super().__init__(coordinator, entry, device_info_dict, "pv_power", "Solar Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -374,10 +399,11 @@ class PvVoltageSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "pv_voltage", "Solar Voltage")
+        super().__init__(coordinator, entry, device_info_dict, "pv_voltage", "Solar Voltage", device_info)
 
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_native_unit_of_measurement = "V"
@@ -397,10 +423,11 @@ class PvCurrentSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "pv_current", "Solar Current")
+        super().__init__(coordinator, entry, device_info_dict, "pv_current", "Solar Current", device_info)
 
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_native_unit_of_measurement = "A"
@@ -420,10 +447,11 @@ class GridPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "grid_power", "Grid Power")
+        super().__init__(coordinator, entry, device_info_dict, "grid_power", "Grid Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -442,10 +470,11 @@ class LoadPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "load_power", "Load Power")
+        super().__init__(coordinator, entry, device_info_dict, "load_power", "Load Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -469,10 +498,11 @@ class TotalPvEnergySensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "total_pv_energy", "Total Solar Energy")
+        super().__init__(coordinator, entry, device_info_dict, "total_pv_energy", "Total Solar Energy", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -491,10 +521,11 @@ class TotalGridInputEnergySensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "total_grid_input_energy", "Total Grid Import Energy")
+        super().__init__(coordinator, entry, device_info_dict, "total_grid_input_energy", "Total Grid Import Energy", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -513,10 +544,11 @@ class TotalGridOutputEnergySensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "total_grid_output_energy", "Total Grid Export Energy")
+        super().__init__(coordinator, entry, device_info_dict, "total_grid_output_energy", "Total Grid Export Energy", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -535,10 +567,11 @@ class TotalLoadEnergySensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "total_load_energy", "Total Load Energy")
+        super().__init__(coordinator, entry, device_info_dict, "total_load_energy", "Total Load Energy", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
@@ -562,10 +595,11 @@ class OperatingModeSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "operating_mode", "Operating Mode")
+        super().__init__(coordinator, entry, device_info_dict, "operating_mode", "Operating Mode", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_options = ["Auto", "AI", "Manual", "Passive", "Unknown"]
@@ -592,10 +626,11 @@ class CtStateSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "ct_state", "CT State")
+        super().__init__(coordinator, entry, device_info_dict, "ct_state", "CT State", device_info)
 
         self._attr_device_class = SensorDeviceClass.ENUM
         self._attr_options = ["Not Connected", "Connected", "Unknown"]
@@ -624,10 +659,11 @@ class PhaseAPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "phase_a_power", "Phase A Power")
+        super().__init__(coordinator, entry, device_info_dict, "phase_a_power", "Phase A Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -646,10 +682,11 @@ class PhaseBPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "phase_b_power", "Phase B Power")
+        super().__init__(coordinator, entry, device_info_dict, "phase_b_power", "Phase B Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -668,10 +705,11 @@ class PhaseCPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "phase_c_power", "Phase C Power")
+        super().__init__(coordinator, entry, device_info_dict, "phase_c_power", "Phase C Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -690,10 +728,11 @@ class TotalCtPowerSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "total_ct_power", "Total CT Power")
+        super().__init__(coordinator, entry, device_info_dict, "total_ct_power", "Total CT Power", device_info)
 
         self._attr_device_class = SensorDeviceClass.POWER
         self._attr_native_unit_of_measurement = UnitOfPower.WATT
@@ -717,10 +756,11 @@ class WifiSignalSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "wifi_signal", "WiFi Signal")
+        super().__init__(coordinator, entry, device_info_dict, "wifi_signal", "WiFi Signal", device_info)
 
         self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
         self._attr_native_unit_of_measurement = "dBm"
@@ -740,10 +780,11 @@ class WifiSsidSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "wifi_ssid", "WiFi Network")
+        super().__init__(coordinator, entry, device_info_dict, "wifi_ssid", "WiFi Network", device_info)
 
         self._attr_entity_registry_enabled_default = False  # Disabled by default
 
@@ -765,10 +806,11 @@ class BluetoothStateSensor(MarstekSensorBase):
         self,
         coordinator: MarstekDataUpdateCoordinator,
         entry: ConfigEntry,
-        device_info: Dict[str, Any],
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, entry, device_info, "bluetooth_state", "Bluetooth State")
+        super().__init__(coordinator, entry, device_info_dict, "bluetooth_state", "Bluetooth State", device_info)
 
         self._attr_entity_registry_enabled_default = False  # Disabled by default
 
