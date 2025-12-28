@@ -287,16 +287,17 @@ class MarstekApiClient:
 
         Returns:
             Dictionary with energy data including:
-            - bat_soc: Battery state of charge (%)
-            - bat_cap: Battery capacity (Wh)
-            - pv_power: Solar power (W)
-            - ongrid_power: Grid power (W, positive=export)
-            - offgrid_power: Load power (W)
-            - bat_power: Battery power (W, positive=charging)
-            - total_pv_energy: Total solar energy (Wh)
-            - total_grid_output_energy: Total grid export (Wh)
-            - total_grid_input_energy: Total grid import (Wh)
-            - total_load_energy: Total load consumption (Wh)
+            - id: ID of Instance (number or null)
+            - bat_soc: Total battery SOC, [%] (number or null)
+            - bat_cap: Total battery capacity, [Wh] (number or null)
+            - pv_power: Solar charging power, [W] (number or null)
+            - ongrid_power: Grid-tied power, [W] (number or null)
+            - offgrid_power: Off-grid power, [W] (number or null)
+            - bat_power: Battery power, [W] (number or null)
+            - total_pv_energy: Total solar energy generated, [Wh] (number or null)
+            - total_grid_output_energy: Total grid output energy, [Wh] (number or null)
+            - total_grid_input_energy: Total grid input energy, [Wh] (number or null)
+            - total_load_energy: Total load (or off-grid) energy consumed, [Wh] (number or null)
         """
         return await self.send_command("ES.GetStatus", {"id": 0})
 
@@ -308,14 +309,34 @@ class MarstekApiClient:
 
         Returns:
             Dictionary with battery data including:
-            - soc: State of charge (%)
-            - charg_flag: Charging enabled (bool)
-            - dischrg_flag: Discharging enabled (bool)
-            - bat_temp: Temperature (°C)
-            - bat_capacity: Remaining capacity (Wh)
-            - rated_capacity: Rated capacity (Wh)
+            - id: ID of Instance (number)
+            - soc: State of charge, [%] (string)
+            - charg_flag: Charging permission flag (boolean)
+            - dischrg_flag: Discharge permission flag (boolean)
+            - bat_temp: Battery temperature, [°C] (number or null)
+            - bat_capacity: Battery remaining capacity, [Wh] (number or null)
+            - rated_capacity: Battery rated capacity, [Wh] (number or null)
         """
         return await self.send_command("Bat.GetStatus", {"id": 0})
+
+    async def get_pv_status(self) -> Dict[str, Any]:
+        """
+        Get photovoltaic (solar) status.
+
+        Calls: PV.GetStatus
+
+        Returns:
+            Dictionary with PV data including:
+            - id: ID of Instance (number)
+            - pv_power: Photovoltaic charging power, [W] (number)
+            - pv_voltage: Photovoltaic charging voltage, [V] (number)
+            - pv_current: Photovoltaic charging current, [A] (number)
+
+        Note:
+            Venus C/E models don't have PV component. This will fail on Venus E 3.
+            Venus D models support this endpoint.
+        """
+        return await self.send_command("PV.GetStatus", {"id": 0})
 
     async def get_em_status(self) -> Dict[str, Any]:
         """
@@ -325,13 +346,47 @@ class MarstekApiClient:
 
         Returns:
             Dictionary with CT data including:
-            - ct_state: 0=not connected, 1=connected
-            - a_power: Phase A power (W)
-            - b_power: Phase B power (W)
-            - c_power: Phase C power (W)
-            - total_power: Total power (W)
+            - id: ID of Instance (number or null)
+            - ct_state: 0=not connected, 1=connected (number or null)
+            - a_power: Phase A power, [W] (number or null)
+            - b_power: Phase B power, [W] (number or null)
+            - c_power: Phase C power, [W] (number or null)
+            - total_power: Total power, [W] (number or null)
         """
         return await self.send_command("EM.GetStatus", {"id": 0})
+
+    async def get_wifi_status(self) -> Dict[str, Any]:
+        """
+        Get WiFi connection status.
+
+        Calls: Wifi.GetStatus
+
+        Returns:
+            Dictionary with WiFi data including:
+            - id: ID of Instance (number)
+            - wifi_mac: WiFi MAC address (string)
+            - ssid: WiFi network name (string or null)
+            - rssi: WiFi signal strength in dBm (number)
+            - sta_ip: Device IP address (string or null)
+            - sta_gate: Gateway address (string or null)
+            - sta_mask: Subnet mask (string or null)
+            - sta_dns: DNS server address (string or null)
+        """
+        return await self.send_command("Wifi.GetStatus", {"id": 0})
+
+    async def get_ble_status(self) -> Dict[str, Any]:
+        """
+        Get Bluetooth connection status.
+
+        Calls: BLE.GetStatus
+
+        Returns:
+            Dictionary with Bluetooth data including:
+            - id: ID of Instance (number)
+            - state: Bluetooth state (string)
+            - ble_mac: Bluetooth MAC address (string)
+        """
+        return await self.send_command("BLE.GetStatus", {"id": 0})
 
     async def get_mode(self) -> Dict[str, Any]:
         """
@@ -341,10 +396,11 @@ class MarstekApiClient:
 
         Returns:
             Dictionary with mode info including:
-            - mode: Current mode ("Auto", "AI", "Manual", or "Passive")
-            - ongrid_power: Grid power (W)
-            - offgrid_power: Load power (W)
-            - bat_soc: Battery SOC (%)
+            - id: ID of Instance (number or null)
+            - mode: Current mode - "Auto", "AI", "Manual", or "Passive" (string or null)
+            - ongrid_power: Grid-tied power, [W] (number or null)
+            - offgrid_power: Off-grid power, [W] (number or null)
+            - bat_soc: SOC, [%] (number or null)
         """
         return await self.send_command("ES.GetMode", {"id": 0})
 
@@ -356,19 +412,48 @@ class MarstekApiClient:
 
         Args:
             mode: The mode to set ("Auto", "AI", "Manual", or "Passive")
-            config: Mode-specific configuration dictionary
+            config: Mode-specific configuration dictionary:
+                - Auto mode: {"auto_cfg": {"enable": 1}}
+                - AI mode: {"ai_cfg": {"enable": 1}}
+                - Manual mode: {"manual_cfg": {
+                    "time_num": 0-9,        # Time period number (Venus C/E supports 0-9)
+                    "start_time": "hh:mm",  # Start time
+                    "end_time": "hh:mm",    # End time
+                    "week_set": 0-127,      # Week bitmap (bit 0=Mon, 127=all days)
+                    "power": number,        # Setting power [W]
+                    "enable": 0 or 1        # ON: 1, OFF: 0
+                  }}
+                - Passive mode: {"passive_cfg": {
+                    "power": number,        # Setting power [W]
+                    "cd_time": number       # Power countdown [seconds]
+                  }}
 
         Returns:
-            True if successful
+            True if successful, False otherwise
 
         Raises:
             MarstekApiError: If mode setting fails
 
-        Example:
+        Examples:
             # Set Auto mode
             await client.set_mode("Auto", {"auto_cfg": {"enable": 1}})
 
-            # Set Passive mode with 100W for 300 seconds
+            # Set AI mode
+            await client.set_mode("AI", {"ai_cfg": {"enable": 1}})
+
+            # Set Manual mode - 100W from 08:30 to 20:30, Monday-Friday
+            await client.set_mode("Manual", {
+                "manual_cfg": {
+                    "time_num": 0,
+                    "start_time": "08:30",
+                    "end_time": "20:30",
+                    "week_set": 31,  # Mon-Fri (binary: 0011111)
+                    "power": 100,
+                    "enable": 1
+                }
+            })
+
+            # Set Passive mode - 100W for 300 seconds
             await client.set_mode("Passive", {
                 "passive_cfg": {"power": 100, "cd_time": 300}
             })

@@ -49,20 +49,46 @@ async def async_setup_entry(
     # Note: Venus E 3 gets all data from ES.GetStatus
     # Some sensors may show 0 if features aren't connected (e.g., solar panels, load monitoring)
     entities = [
-        # Battery sensors (from ES.GetStatus)
+        # Battery sensors (from Bat.GetStatus / ES.GetStatus)
         BatterySocSensor(coordinator, entry, device_info),
         BatteryCapacitySensor(coordinator, entry, device_info),
+        BatteryPowerSensor(coordinator, entry, device_info),
+        BatteryTemperatureSensor(coordinator, entry, device_info),
+        BatteryChargeFlagSensor(coordinator, entry, device_info),
+        BatteryDischargeFlagSensor(coordinator, entry, device_info),
+        BatteryRatedCapacitySensor(coordinator, entry, device_info),
 
         # Power flow sensors (from ES.GetStatus)
         PvPowerSensor(coordinator, entry, device_info),
         GridPowerSensor(coordinator, entry, device_info),
         LoadPowerSensor(coordinator, entry, device_info),
 
+        # PV (solar) sensors (from PV.GetStatus - Venus D only)
+        PvVoltageSensor(coordinator, entry, device_info),
+        PvCurrentSensor(coordinator, entry, device_info),
+
         # Energy total sensors (from ES.GetStatus)
         TotalPvEnergySensor(coordinator, entry, device_info),
         TotalGridInputEnergySensor(coordinator, entry, device_info),
         TotalGridOutputEnergySensor(coordinator, entry, device_info),
         TotalLoadEnergySensor(coordinator, entry, device_info),
+
+        # Operating mode sensor (from ES.GetMode)
+        OperatingModeSensor(coordinator, entry, device_info),
+
+        # Energy meter sensors (from EM.GetStatus)
+        CtStateSensor(coordinator, entry, device_info),
+        PhaseAPowerSensor(coordinator, entry, device_info),
+        PhaseBPowerSensor(coordinator, entry, device_info),
+        PhaseCPowerSensor(coordinator, entry, device_info),
+        TotalCtPowerSensor(coordinator, entry, device_info),
+
+        # WiFi sensors (from WiFi.GetStatus)
+        WifiSignalSensor(coordinator, entry, device_info),
+        WifiSsidSensor(coordinator, entry, device_info),
+
+        # Bluetooth sensor (from BLE.GetStatus)
+        BluetoothStateSensor(coordinator, entry, device_info),
     ]
 
     # Add all entities to Home Assistant
@@ -233,11 +259,85 @@ class BatteryTemperatureSensor(MarstekSensorBase):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
         return self._get_value("bat", "bat_temp")
+
+
+class BatteryChargeFlagSensor(MarstekSensorBase):
+    """Battery Charging Permission Flag sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "battery_charge_flag", "Battery Charge Enabled")
+
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["Enabled", "Disabled", "Unknown"]
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        flag = self._get_value("bat", "charg_flag")
+        if flag is None:
+            return "Unknown"
+        return "Enabled" if flag else "Disabled"
+
+
+class BatteryDischargeFlagSensor(MarstekSensorBase):
+    """Battery Discharging Permission Flag sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "battery_discharge_flag", "Battery Discharge Enabled")
+
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["Enabled", "Disabled", "Unknown"]
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        flag = self._get_value("bat", "dischrg_flag")
+        if flag is None:
+            return "Unknown"
+        return "Enabled" if flag else "Disabled"
+
+
+class BatteryRatedCapacitySensor(MarstekSensorBase):
+    """Battery Rated Capacity sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "battery_rated_capacity", "Battery Rated Capacity")
+
+        self._attr_device_class = SensorDeviceClass.ENERGY_STORAGE
+        self._attr_native_unit_of_measurement = UnitOfEnergy.WATT_HOUR
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("bat", "rated_capacity")
 
 
 # ============================================================================
@@ -265,6 +365,52 @@ class PvPowerSensor(MarstekSensorBase):
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
         return self._get_value("es", "pv_power")
+
+
+class PvVoltageSensor(MarstekSensorBase):
+    """Solar (PV) Voltage sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "pv_voltage", "Solar Voltage")
+
+        self._attr_device_class = SensorDeviceClass.VOLTAGE
+        self._attr_native_unit_of_measurement = "V"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False  # Disabled by default (Venus D only)
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("pv", "pv_voltage")
+
+
+class PvCurrentSensor(MarstekSensorBase):
+    """Solar (PV) Current sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "pv_current", "Solar Current")
+
+        self._attr_device_class = SensorDeviceClass.CURRENT
+        self._attr_native_unit_of_measurement = "A"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False  # Disabled by default (Venus D only)
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("pv", "pv_current")
 
 
 class GridPowerSensor(MarstekSensorBase):
@@ -402,3 +548,231 @@ class TotalLoadEnergySensor(MarstekSensorBase):
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
         return self._get_value("es", "total_load_energy")
+
+
+# ============================================================================
+# Mode Sensors
+# ============================================================================
+
+
+class OperatingModeSensor(MarstekSensorBase):
+    """Operating Mode sensor (Auto/AI/Manual/Passive)."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "operating_mode", "Operating Mode")
+
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["Auto", "AI", "Manual", "Passive", "Unknown"]
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        mode = self._get_value("mode", "mode")
+        # Ensure the value is one of the valid options
+        if mode in self._attr_options:
+            return mode
+        return "Unknown"
+
+
+# ============================================================================
+# Energy Meter Sensors
+# ============================================================================
+
+
+class CtStateSensor(MarstekSensorBase):
+    """CT (Current Transformer) Connection State sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "ct_state", "CT State")
+
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["Not Connected", "Connected", "Unknown"]
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        # Get CT state from EM data (0=not connected, 1=connected)
+        ct_state = self._get_value("em", "ct_state")
+
+        if ct_state is None:
+            return "Unknown"
+
+        if ct_state == 0:
+            return "Not Connected"
+        elif ct_state == 1:
+            return "Connected"
+        else:
+            return "Unknown"
+
+
+class PhaseAPowerSensor(MarstekSensorBase):
+    """Phase A Power sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "phase_a_power", "Phase A Power")
+
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("em", "a_power")
+
+
+class PhaseBPowerSensor(MarstekSensorBase):
+    """Phase B Power sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "phase_b_power", "Phase B Power")
+
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("em", "b_power")
+
+
+class PhaseCPowerSensor(MarstekSensorBase):
+    """Phase C Power sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "phase_c_power", "Phase C Power")
+
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("em", "c_power")
+
+
+class TotalCtPowerSensor(MarstekSensorBase):
+    """Total CT Power sensor (sum of all phases)."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "total_ct_power", "Total CT Power")
+
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        return self._get_value("em", "total_power")
+
+
+# ============================================================================
+# WiFi Sensors
+# ============================================================================
+
+
+class WifiSignalSensor(MarstekSensorBase):
+    """WiFi Signal Strength sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "wifi_signal", "WiFi Signal")
+
+        self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
+        self._attr_native_unit_of_measurement = "dBm"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
+
+    @property
+    def native_value(self) -> Optional[int]:
+        """Return the state of the sensor."""
+        return self._get_value("wifi", "rssi")
+
+
+class WifiSsidSensor(MarstekSensorBase):
+    """WiFi Network Name (SSID) sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "wifi_ssid", "WiFi Network")
+
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        return self._get_value("wifi", "ssid")
+
+
+# ============================================================================
+# Bluetooth Sensors
+# ============================================================================
+
+
+class BluetoothStateSensor(MarstekSensorBase):
+    """Bluetooth Connection State sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: Dict[str, Any],
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info, "bluetooth_state", "Bluetooth State")
+
+        self._attr_entity_registry_enabled_default = False  # Disabled by default
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        return self._get_value("ble", "state")

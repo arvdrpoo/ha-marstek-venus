@@ -69,9 +69,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             Dictionary containing all device data:
             {
                 "es": {...},      # Energy system data
-                "bat": {...},     # Battery data
+                "bat": {...},     # Battery data (from Bat.GetStatus or ES.GetStatus)
                 "mode": {...},    # Current operating mode
-                "em": {...}       # Energy meter data (or None)
+                "em": {...},      # Energy meter data (or None)
+                "wifi": {...},    # WiFi status data (or None)
+                "ble": {...},     # Bluetooth status data (or None)
+                "pv": {...}       # PV (solar) status data (or None, Venus D only)
             }
 
         Raises:
@@ -84,17 +87,24 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Fetching energy system status")
             es_data = await self.client.get_es_status()
 
-            # Venus E 3 doesn't support Bat.GetStatus, but ES.GetStatus includes battery data
-            # Use ES data for battery sensors
-            bat_data = {
-                "soc": es_data.get("bat_soc"),
-                "bat_capacity": es_data.get("bat_cap"),
-                # Other battery fields not available on Venus E 3
-                "charg_flag": None,
-                "dischrg_flag": None,
-                "bat_temp": None,
-                "rated_capacity": None,
-            }
+            # Try to get detailed battery status
+            # Venus E 3 may not support this, fallback to ES data
+            bat_data = None
+            try:
+                _LOGGER.debug("Fetching battery status")
+                bat_data = await self.client.get_bat_status()
+            except (MarstekConnectionError, MarstekApiError) as err:
+                _LOGGER.debug("Bat.GetStatus not available, using ES data: %s", err)
+                # Fallback: Use ES data for battery sensors
+                bat_data = {
+                    "soc": es_data.get("bat_soc"),
+                    "bat_capacity": es_data.get("bat_cap"),
+                    # Other battery fields not available on Venus E 3
+                    "charg_flag": None,
+                    "dischrg_flag": None,
+                    "bat_temp": None,
+                    "rated_capacity": None,
+                }
 
             # Try to get operating mode
             # May not be supported on all Venus E 3 hardware revisions
@@ -123,6 +133,34 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             except (MarstekConnectionError, MarstekApiError) as err:
                 _LOGGER.debug("Energy meter not available: %s", err)
 
+            # Try to get WiFi status
+            # Note: Rate limiting is handled automatically by the API client
+            wifi_data = None
+            try:
+                _LOGGER.debug("Fetching WiFi status")
+                wifi_data = await self.client.get_wifi_status()
+            except (MarstekConnectionError, MarstekApiError) as err:
+                _LOGGER.debug("WiFi status not available: %s", err)
+
+            # Try to get Bluetooth status
+            # Note: Rate limiting is handled automatically by the API client
+            ble_data = None
+            try:
+                _LOGGER.debug("Fetching Bluetooth status")
+                ble_data = await self.client.get_ble_status()
+            except (MarstekConnectionError, MarstekApiError) as err:
+                _LOGGER.debug("Bluetooth status not available: %s", err)
+
+            # Try to get PV (solar) status
+            # Venus C/E models don't have PV component, Venus D does
+            # Note: Rate limiting is handled automatically by the API client
+            pv_data = None
+            try:
+                _LOGGER.debug("Fetching PV status")
+                pv_data = await self.client.get_pv_status()
+            except (MarstekConnectionError, MarstekApiError) as err:
+                _LOGGER.debug("PV status not available (normal for Venus C/E): %s", err)
+
             # Return all the data as a dictionary
             # Entities will access this via self.coordinator.data
             return {
@@ -130,6 +168,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 "bat": bat_data,
                 "mode": mode_data,
                 "em": em_data,
+                "wifi": wifi_data,
+                "ble": ble_data,
+                "pv": pv_data,
             }
 
         except MarstekConnectionError as err:
