@@ -1,4 +1,5 @@
 """Select platform for Marstek Venus E."""
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -139,9 +140,18 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
                 config = {"ai_cfg": {"enable": 1}}
 
             elif option == MODE_MANUAL:
-                # Manual mode with default configuration
-                # User can configure power and time settings via service calls
-                config = {"manual_cfg": {"enable": 1}}
+                # Manual mode with complete default configuration
+                # Sets to 0W power, all week, 00:00-23:59 (effectively standby)
+                config = {
+                    "manual_cfg": {
+                        "time_num": 0,
+                        "start_time": "00:00",
+                        "end_time": "23:59",
+                        "week_set": 127,  # All days (binary: 1111111)
+                        "power": 0,
+                        "enable": 1
+                    }
+                }
 
             elif option == MODE_PASSIVE:
                 # Passive mode requires power and countdown parameters
@@ -161,6 +171,14 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
 
             # Refresh coordinator data to reflect the change
             await self.coordinator.async_request_refresh()
+
+        except asyncio.TimeoutError:
+            _LOGGER.error(
+                "Timeout setting mode to %s. Your Venus E 3 hardware may not support "
+                "mode control (ES.SetMode). The mode selector will be read-only on this device.",
+                option
+            )
+            # Consider disabling the entity or making it unavailable
 
         except MarstekApiError as err:
             _LOGGER.error("Error setting mode: %s", err)
