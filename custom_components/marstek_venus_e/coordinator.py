@@ -130,7 +130,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             try:
                 _LOGGER.debug("Fetching energy meter status")
                 em_data = await self.client.get_em_status()
-            except (MarstekConnectionError, MarstekApiError) as err:
+            except (MarstekConnectionError, MarstekApiError, TimeoutError, Exception) as err:
                 _LOGGER.debug("Energy meter not available: %s", err)
 
             # Skip optional API calls to reduce update time
