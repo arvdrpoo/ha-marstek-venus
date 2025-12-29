@@ -22,7 +22,7 @@ import importlib.util
 # Import the API module directly to avoid Home Assistant dependencies
 spec = importlib.util.spec_from_file_location(
     "api",
-    "custom_components/marstek_venus_e/api.py"
+    "custom_components/marstek_venus/api.py"
 )
 api_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(api_module)
@@ -113,7 +113,7 @@ async def test_device(host: str, port: int):
 
         print("\nNext Steps:")
         print("  1. Integration is ready to install in Home Assistant")
-        print("  2. Copy custom_components/marstek_venus_e to ~/.homeassistant/custom_components/")
+        print("  2. Copy custom_components/marstek_venus to ~/.homeassistant/custom_components/")
         print("  3. Restart Home Assistant")
         print("  4. Add integration: Settings > Devices & Services")
         print(f"  5. Enter device IP: {host}")

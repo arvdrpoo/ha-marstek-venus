@@ -22,6 +22,7 @@ A custom Home Assistant integration for the Marstek Venus home battery system, u
 ### Prerequisites
 
 Before installation:
+
 - Home Assistant 2024.1.0 or later
 - HACS installed ([installation guide](https://hacs.xyz/docs/setup/download))
 - Marstek Venus device connected to your network
@@ -33,7 +34,7 @@ Before installation:
 1. **Add Custom Repository**
    - Open HACS > Integrations
    - Click menu (⋮) > Custom repositories
-   - Add repository: `https://github.com/arvdrpoo/ha-marstek-venus-e`
+   - Add repository: `https://github.com/arvdrpoo/ha-marstek-venus`
    - Category: `Integration`
    - Click Add
 
@@ -53,8 +54,8 @@ Before installation:
 
 ### Manual Installation
 
-1. Download the [latest release](https://github.com/arvdrpoo/ha-marstek-venus-e/releases)
-2. Copy `custom_components/marstek_venus_e` to your `config/custom_components/` directory
+1. Download the [latest release](https://github.com/arvdrpoo/ha-marstek-venus/releases)
+2. Copy `custom_components/marstek_venus` to your `config/custom_components/` directory
 3. Restart Home Assistant
 4. Follow step 3 above to add the integration
 
@@ -69,15 +70,18 @@ Before installation:
 ### Sensors (9 total)
 
 **Battery Sensors:**
+
 - `Battery` - Battery state of charge (%)
 - `Battery Capacity` - Current battery capacity (Wh)
 
 **Power Flow Sensors:**
+
 - `Solar Power` - Solar panel power generation (W) *
 - `Grid Power` - Grid import/export power (W, positive = exporting to grid)
 - `Load Power` - Load consumption power (W) *
 
 **Energy Total Sensors:**
+
 - `Total Solar Energy` - Cumulative solar energy generated (Wh) *
 - `Total Grid Import Energy` - Cumulative energy imported from grid (Wh)
 - `Total Grid Export Energy` - Cumulative energy exported to grid (Wh)
@@ -88,6 +92,7 @@ Before installation:
 ### Controls
 
 **Select Entity:**
+
 - `Operating Mode` - Switch between operating modes **
   - **Auto**: Automatic mode - device manages itself
   - **AI**: AI-based optimization mode
@@ -119,7 +124,6 @@ Complete API documentation is available in `docs/MarstekDeviceOpenApi.pdf`.
 - Ensure the device's UDP API hasn't been disabled in the mobile app
 - Try reloading the integration from Settings > Devices & Services
 
-
 ## Development
 
 See [CLAUDE.md](CLAUDE.md) for detailed information about the codebase architecture and development guidelines.
@@ -142,7 +146,7 @@ docker-compose restart homeassistant
 docker-compose down
 ```
 
-Access Home Assistant at http://localhost:8123. The integration is mounted read-only from `custom_components/marstek_venus_e`. First startup takes 1-2 minutes to initialize.
+Access Home Assistant at <http://localhost:8123>. The integration is mounted read-only from `custom_components/marstek_venus`. First startup takes 1-2 minutes to initialize.
 
 ### Testing the API Client
 
@@ -159,7 +163,7 @@ python3 diagnose.py 192.168.1.194
 ### Code Structure
 
 ```
-custom_components/marstek_venus_e/
+custom_components/marstek_venus/
 ├── __init__.py          # Integration setup
 ├── manifest.json        # Integration metadata
 ├── const.py            # Constants

@@ -136,7 +136,7 @@ python3 test_raw.py
 
 ### Comprehensive Test
 ```bash
-python3 test_venus_e3.py
+python3 test_venus3.py
 ```
 ✅ Full device test with proper delays
 ✅ Shows all available data
@@ -154,7 +154,7 @@ The integration is ready to install:
 
 ```bash
 # 1. Copy integration files
-cp -r custom_components/marstek_venus_e ~/.homeassistant/custom_components/
+cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
 
 # 2. Restart Home Assistant
 

@@ -3,7 +3,7 @@
 ## ✅ What's Been Built
 
 ### Complete Home Assistant Integration
-All integration files are ready in `custom_components/marstek_venus_e/`:
+All integration files are ready in `custom_components/marstek_venus/`:
 - **10 Python files** implementing sensors, controls, and API communication
 - **11 sensor entities**: Battery, power flows, energy totals
 - **1 select entity**: Operating mode control (Auto/AI/Passive)
@@ -70,7 +70,7 @@ python3 test_connection.py 192.168.1.195
 
 ```bash
 # Copy integration to HA
-cp -r custom_components/marstek_venus_e ~/.homeassistant/custom_components/
+cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
 
 # Restart HA and add integration
 # Settings > Devices & Services > Add Integration > "Marstek Venus E"
@@ -85,7 +85,7 @@ cp -r custom_components/marstek_venus_e ~/.homeassistant/custom_components/
 | `diagnose.py` | Detailed UDP diagnostics |
 | `DEVICE_SETUP.md` | How to enable API on device |
 | `QUICKSTART.md` | Fast setup guide |
-| `custom_components/marstek_venus_e/` | Full HA integration |
+| `custom_components/marstek_venus/` | Full HA integration |
 
 ## 🎯 Testing Summary
 

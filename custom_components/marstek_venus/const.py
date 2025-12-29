@@ -1,7 +1,7 @@
 """Constants for the Marstek Venus E integration."""
 
 # Integration domain
-DOMAIN = "marstek_venus_e"
+DOMAIN = "marstek_venus"
 
 # Configuration keys
 CONF_HOST = "host"

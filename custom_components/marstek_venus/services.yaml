@@ -3,7 +3,7 @@ set_mode_auto:
   description: Enable automatic mode operation
   target:
     entity:
-      integration: marstek_venus_e
+      integration: marstek_venus
       domain: select
 
 set_mode_ai:
@@ -11,7 +11,7 @@ set_mode_ai:
   description: Enable AI-based optimization mode
   target:
     entity:
-      integration: marstek_venus_e
+      integration: marstek_venus
       domain: select
 
 set_mode_manual:
@@ -19,7 +19,7 @@ set_mode_manual:
   description: Configure manual mode with time-based power schedule
   target:
     entity:
-      integration: marstek_venus_e
+      integration: marstek_venus
       domain: select
   fields:
     time_slot:
@@ -93,7 +93,7 @@ set_mode_passive:
   description: Set direct power control with countdown timer
   target:
     entity:
-      integration: marstek_venus_e
+      integration: marstek_venus
       domain: select
   fields:
     power:

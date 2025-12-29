@@ -64,7 +64,7 @@ Testing Marstek Venus E at 192.168.1.100:30000
 # Find your HA config directory and copy files
 # Replace /path/to/homeassistant with your actual path
 
-cp -r custom_components/marstek_venus_e ~/.homeassistant/custom_components/
+cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
 
 # Common paths:
 # ~/.homeassistant/custom_components/          (Linux/macOS)
@@ -110,7 +110,7 @@ Use the "Operating Mode" selector to switch between:
 
 ### "Integration not found"
 
-- Verify files copied correctly: `ls ~/.homeassistant/custom_components/marstek_venus_e/`
+- Verify files copied correctly: `ls ~/.homeassistant/custom_components/marstek_venus/`
 - Restart Home Assistant again
 - Clear browser cache
 
@@ -137,4 +137,4 @@ Use the "Operating Mode" selector to switch between:
 - Detailed testing guide: [TESTING.md](TESTING.md)
 - Architecture info: [CLAUDE.md](CLAUDE.md)
 - API reference: [docs/MarstekDeviceOpenApi.pdf](docs/MarstekDeviceOpenApi.pdf)
-- Report issues: https://github.com/arvdrpoo/ha-marstek-venus-e/issues
+- Report issues: https://github.com/arvdrpoo/ha-marstek-venus/issues

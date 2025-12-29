@@ -96,7 +96,7 @@ This integration targets Venus E 3, which has the same component set as Venus C.
 
 Standard HA custom integration structure expected:
 ```
-custom_components/marstek_venus_e/
+custom_components/marstek_venus/
 ├── __init__.py          # Integration setup, config entry handling
 ├── manifest.json        # Integration metadata
 ├── config_flow.py       # UI-based configuration

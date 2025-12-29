@@ -40,6 +40,7 @@ deactivate
 ### What the Test Does
 
 The test script will:
+
 1. ✅ Connect to your device via UDP
 2. ✅ Retrieve device information (model, firmware, MAC addresses)
 3. ✅ Get battery status (SOC, capacity, temperature)
@@ -114,16 +115,17 @@ Once the standalone test passes, install the integration in Home Assistant.
 # Usually: ~/.homeassistant or /config (in Docker/HAOS)
 
 # Copy the integration
-cp -r custom_components/marstek_venus_e /path/to/homeassistant/custom_components/
+cp -r custom_components/marstek_venus /path/to/homeassistant/custom_components/
 
 # Example for typical locations:
-# cp -r custom_components/marstek_venus_e ~/.homeassistant/custom_components/
-# cp -r custom_components/marstek_venus_e /config/custom_components/
+# cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
+# cp -r custom_components/marstek_venus /config/custom_components/
 ```
 
 ### Step 2: Restart Home Assistant
 
 Restart HA to load the new integration:
+
 - Settings > System > Restart
 - Or via CLI: `ha core restart`
 
@@ -140,6 +142,7 @@ Restart HA to load the new integration:
 After adding, you should see:
 
 **Sensors (11 total):**
+
 - Battery (%)
 - Battery Capacity (Wh)
 - Battery Power (W)
@@ -153,15 +156,17 @@ After adding, you should see:
 - Total Load Energy (Wh)
 
 **Controls (1 total):**
+
 - Operating Mode (select: Auto/AI/Passive)
 
 ### Step 5: Check Logs
 
 Monitor logs for errors:
+
 - Settings > System > Logs
 - Or view the log file: `home-assistant.log`
 
-Look for lines containing `marstek_venus_e`:
+Look for lines containing `marstek_venus`:
 
 ```bash
 # View logs in real-time
@@ -173,15 +178,19 @@ tail -f /path/to/homeassistant/home-assistant.log | grep marstek
 ### Test Script Fails with "Connection Error"
 
 **Symptoms:**
+
 ```
 ❌ Connection Error: Failed to connect: ...
 ```
 
 **Solutions:**
+
 1. Verify device IP address:
+
    ```bash
    ping 192.168.1.100
    ```
+
 2. Check Open API is enabled in Marstek mobile app
 3. Ensure device is on same network as your computer
 4. Try different UDP port if you changed it in the app
@@ -190,11 +199,13 @@ tail -f /path/to/homeassistant/home-assistant.log | grep marstek
 ### Test Script Fails with "Timeout Error"
 
 **Symptoms:**
+
 ```
 ❌ Timeout Error: Device did not respond
 ```
 
 **Solutions:**
+
 1. Device may be busy - wait and try again
 2. Increase timeout in `const.py` (change `TIMEOUT = 10` to `TIMEOUT = 20`)
 3. Check network latency: `ping -c 10 192.168.1.100`
@@ -202,10 +213,13 @@ tail -f /path/to/homeassistant/home-assistant.log | grep marstek
 ### Integration Not Appearing in HA
 
 **Solutions:**
+
 1. Verify files are in correct location:
+
    ```bash
-   ls -la /path/to/homeassistant/custom_components/marstek_venus_e/
+   ls -la /path/to/homeassistant/custom_components/marstek_venus/
    ```
+
 2. Check file permissions (should be readable)
 3. Check HA logs for Python errors
 4. Try clearing browser cache and refreshing
@@ -214,6 +228,7 @@ tail -f /path/to/homeassistant/home-assistant.log | grep marstek
 ### Entities Show "Unavailable"
 
 **Solutions:**
+
 1. Check HA logs for connection errors
 2. Run standalone test script to verify device is reachable
 3. Check if device Open API is still enabled
@@ -225,10 +240,12 @@ tail -f /path/to/homeassistant/home-assistant.log | grep marstek
 ### Mode Selection Doesn't Work
 
 **Symptoms:**
+
 - Can select mode but doesn't change
 - Mode reverts to previous value
 
 **Solutions:**
+
 1. Check HA logs for API errors
 2. Verify you have permission to control the device
 3. Try using the Marstek mobile app to verify device is controllable
@@ -241,7 +258,7 @@ tail -f /path/to/homeassistant/home-assistant.log | grep marstek
 ```python
 # Create a test script to change modes
 import asyncio
-from custom_components.marstek_venus_e.api import MarstekApiClient
+from custom_components.marstek_venus.api import MarstekApiClient
 
 async def test_mode_change():
     client = MarstekApiClient("192.168.1.100", 30000)
@@ -285,7 +302,7 @@ script/setup
 source venv/bin/activate
 
 # Copy integration
-cp -r /path/to/ha-marstek-venus-e/custom_components/marstek_venus_e config/custom_components/
+cp -r /path/to/ha-marstek-venus/custom_components/marstek_venus config/custom_components/
 
 # Run HA
 hass -c config

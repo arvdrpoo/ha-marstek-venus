@@ -6,7 +6,7 @@ services:
       # Mount the test config directory
       # - ./test-ha-config:/config
       # Mount the integration directly into custom_components
-      - ./custom_components/marstek_venus_e:/config/custom_components/marstek_venus_e:ro
+      - ./custom_components/marstek_venus:/config/custom_components/marstek_venus:ro
     environment:
       - TZ=Europe/Amsterdam
     ports:
