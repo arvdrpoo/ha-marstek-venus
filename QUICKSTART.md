@@ -137,4 +137,4 @@ Use the "Operating Mode" selector to switch between:
 - Detailed testing guide: [TESTING.md](TESTING.md)
 - Architecture info: [CLAUDE.md](CLAUDE.md)
 - API reference: [docs/MarstekDeviceOpenApi.pdf](docs/MarstekDeviceOpenApi.pdf)
-- Report issues: https://github.com/arvdrpoo/ha-marstek-venus-e/issues
+- Report issues: https://github.com/arvdrpoo/ha-marstek-venus/issues
