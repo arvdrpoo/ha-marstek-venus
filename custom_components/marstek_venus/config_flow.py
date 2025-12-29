@@ -10,6 +10,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import selector
 
 from .api import MarstekApiClient, MarstekConnectionError, MarstekApiError
 from .const import (
@@ -207,11 +208,25 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
                     default=current_options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_SCAN_INTERVAL,
+                        max=MAX_SCAN_INTERVAL,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="seconds",
+                    )
+                ),
                 vol.Optional(
                     CONF_TIMEOUT,
                     default=current_options.get(CONF_TIMEOUT, TIMEOUT)
-                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_TIMEOUT, max=MAX_TIMEOUT)),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_TIMEOUT,
+                        max=MAX_TIMEOUT,
+                        mode=selector.NumberSelectorMode.BOX,
+                        unit_of_measurement="seconds",
+                    )
+                ),
                 vol.Optional(
                     CONF_ENABLE_WIFI_SENSORS,
                     default=current_options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS)
