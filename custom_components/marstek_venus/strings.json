@@ -19,5 +19,24 @@
     "abort": {
       "already_configured": "This device is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Marstek Venus",
+        "description": "Configure update intervals and optional sensors",
+        "data": {
+          "scan_interval": "Update Interval (seconds)",
+          "timeout": "API Timeout (seconds)",
+          "enable_wifi_sensors": "Enable WiFi Sensors",
+          "enable_ble_sensors": "Enable Bluetooth Sensors",
+          "enable_pv_sensors": "Enable PV Sensors (Venus D only)"
+        }
+      }
+    },
+    "error": {
+      "invalid_scan_interval": "Scan interval must be between 15 and 300 seconds",
+      "invalid_timeout": "Timeout must be between 5 and 30 seconds"
+    }
   }
 }

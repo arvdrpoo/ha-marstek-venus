@@ -7,7 +7,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 
@@ -15,9 +15,23 @@ from .api import MarstekApiClient, MarstekConnectionError, MarstekApiError
 from .const import (
     CONF_HOST,
     CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
+    CONF_ENABLE_WIFI_SENSORS,
+    CONF_ENABLE_BLE_SENSORS,
+    CONF_ENABLE_PV_SENSORS,
     DEFAULT_NAME,
     DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_ENABLE_WIFI_SENSORS,
+    DEFAULT_ENABLE_BLE_SENSORS,
+    DEFAULT_ENABLE_PV_SENSORS,
     DOMAIN,
+    MIN_SCAN_INTERVAL,
+    MAX_SCAN_INTERVAL,
+    MIN_TIMEOUT,
+    MAX_TIMEOUT,
+    TIMEOUT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -149,5 +163,71 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=USER_SCHEMA,
+            errors=errors,
+        )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "OptionsFlowHandler":
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options flow for Marstek Venus integration."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Manage the options."""
+        errors: Dict[str, str] = {}
+
+        if user_input is not None:
+            # Validate scan interval
+            scan_interval = user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            if not (MIN_SCAN_INTERVAL <= scan_interval <= MAX_SCAN_INTERVAL):
+                errors[CONF_SCAN_INTERVAL] = "invalid_scan_interval"
+
+            # Validate timeout
+            timeout = user_input.get(CONF_TIMEOUT, TIMEOUT)
+            if not (MIN_TIMEOUT <= timeout <= MAX_TIMEOUT):
+                errors[CONF_TIMEOUT] = "invalid_timeout"
+
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
+
+        # Get current options, fallback to defaults
+        current_options = self.config_entry.options
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    CONF_SCAN_INTERVAL,
+                    default=current_options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)),
+                vol.Optional(
+                    CONF_TIMEOUT,
+                    default=current_options.get(CONF_TIMEOUT, TIMEOUT)
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_TIMEOUT, max=MAX_TIMEOUT)),
+                vol.Optional(
+                    CONF_ENABLE_WIFI_SENSORS,
+                    default=current_options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS)
+                ): cv.boolean,
+                vol.Optional(
+                    CONF_ENABLE_BLE_SENSORS,
+                    default=current_options.get(CONF_ENABLE_BLE_SENSORS, DEFAULT_ENABLE_BLE_SENSORS)
+                ): cv.boolean,
+                vol.Optional(
+                    CONF_ENABLE_PV_SENSORS,
+                    default=current_options.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS)
+                ): cv.boolean,
+            }),
             errors=errors,
         )

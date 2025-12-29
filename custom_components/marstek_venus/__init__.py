@@ -8,13 +8,28 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .api import MarstekApiClient, MarstekConnectionError
-from .const import CONF_HOST, CONF_PORT, DEFAULT_PORT, DOMAIN
+from .const import (
+    CONF_HOST,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
+    CONF_ENABLE_WIFI_SENSORS,
+    CONF_ENABLE_BLE_SENSORS,
+    CONF_ENABLE_PV_SENSORS,
+    DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_ENABLE_WIFI_SENSORS,
+    DEFAULT_ENABLE_BLE_SENSORS,
+    DEFAULT_ENABLE_PV_SENSORS,
+    DOMAIN,
+    TIMEOUT,
+)
 from .coordinator import MarstekDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 # List of platforms this integration provides
-PLATFORMS = [Platform.SENSOR, Platform.SELECT]
+PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.BINARY_SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -45,6 +60,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     host = entry.data[CONF_HOST]
     port = entry.data.get(CONF_PORT, DEFAULT_PORT)
 
+    # Ensure options are set with defaults for existing installations
+    if not entry.options:
+        hass.config_entries.async_update_entry(
+            entry,
+            options={
+                CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+                CONF_TIMEOUT: TIMEOUT,
+                CONF_ENABLE_WIFI_SENSORS: DEFAULT_ENABLE_WIFI_SENSORS,
+                CONF_ENABLE_BLE_SENSORS: DEFAULT_ENABLE_BLE_SENSORS,
+                CONF_ENABLE_PV_SENSORS: DEFAULT_ENABLE_PV_SENSORS,
+            }
+        )
+
+    # Get options (with fallback to defaults)
+    scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+
     _LOGGER.info("Setting up Marstek Venus E at %s:%s", host, port)
 
     # Create the API client
@@ -69,8 +100,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await client.close()
         raise ConfigEntryNotReady(f"Unable to connect to device: {err}") from err
 
-    # Create the data update coordinator
-    coordinator = MarstekDataUpdateCoordinator(hass, client, device_info)
+    # Create the data update coordinator with custom scan interval
+    coordinator = MarstekDataUpdateCoordinator(hass, client, device_info, scan_interval)
 
     # Fetch initial data
     # This ensures we have data before entities are created
@@ -91,8 +122,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # This will load sensor.py and select.py
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Register options update listener
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
+
     _LOGGER.info("Marstek Venus E setup complete")
     return True
+
+
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update options."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

@@ -1,5 +1,6 @@
 """Data update coordinator for Marstek Venus E."""
 import logging
+import time
 from datetime import timedelta
 from typing import Any, Dict
 
@@ -34,6 +35,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         client: MarstekApiClient,
         device_info: Dict[str, Any],
+        scan_interval: int = DEFAULT_SCAN_INTERVAL,
     ) -> None:
         """
         Initialize the coordinator.
@@ -42,9 +44,19 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             hass: Home Assistant instance
             client: The API client for device communication
             device_info: Basic device information from initial connection
+            scan_interval: Update interval in seconds
         """
         self.client = client
         self.device_info = device_info
+
+        # Statistics tracking for diagnostics
+        self._stats = {
+            "request_count": 0,
+            "error_count": 0,
+            "total_response_time": 0.0,
+            "last_update_success": None,
+            "last_update_duration": None,
+        }
 
         # Initialize the parent DataUpdateCoordinator
         # The name appears in debug logs
@@ -52,8 +64,31 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Marstek Venus E",
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(seconds=scan_interval),
         )
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get diagnostic statistics."""
+        avg_response_time = 0.0
+        if self._stats["request_count"] > 0:
+            avg_response_time = self._stats["total_response_time"] / self._stats["request_count"]
+
+        return {
+            "request_count": self._stats["request_count"],
+            "error_count": self._stats["error_count"],
+            "average_response_time": round(avg_response_time, 2),
+            "error_rate": round(
+                (self._stats["error_count"] / self._stats["request_count"] * 100)
+                if self._stats["request_count"] > 0 else 0.0,
+                2
+            ),
+            "last_update_success": self._stats["last_update_success"],
+            "last_update_duration": self._stats["last_update_duration"],
+        }
+
+    def update_scan_interval(self, seconds: int) -> None:
+        """Update the scan interval."""
+        self.update_interval = timedelta(seconds=seconds)
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """
@@ -80,7 +115,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         Raises:
             UpdateFailed: If data fetch fails
         """
+        start_time = time.monotonic()
+
         try:
+            self._stats["request_count"] += 1
+
             # Fetch data from API endpoints
             # Note: Venus E 3 only supports some endpoints, not all from the docs
 
@@ -140,6 +179,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             ble_data = None
             pv_data = None
 
+            # Track success
+            duration = time.monotonic() - start_time
+            self._stats["total_response_time"] += duration
+            self._stats["last_update_success"] = True
+            self._stats["last_update_duration"] = round(duration, 2)
+
             # Return all the data as a dictionary
             # Entities will access this via self.coordinator.data
             return {
@@ -154,13 +199,22 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
 
         except MarstekConnectionError as err:
             # Connection error - device may be offline
+            self._stats["error_count"] += 1
+            self._stats["last_update_success"] = False
+            self._stats["last_update_duration"] = round(time.monotonic() - start_time, 2)
             raise UpdateFailed(f"Connection error: {err}") from err
 
         except MarstekApiError as err:
             # API error - device returned error
+            self._stats["error_count"] += 1
+            self._stats["last_update_success"] = False
+            self._stats["last_update_duration"] = round(time.monotonic() - start_time, 2)
             raise UpdateFailed(f"API error: {err}") from err
 
         except Exception as err:
             # Unexpected error
+            self._stats["error_count"] += 1
+            self._stats["last_update_success"] = False
+            self._stats["last_update_duration"] = round(time.monotonic() - start_time, 2)
             _LOGGER.exception("Unexpected error updating data: %s", err)
             raise UpdateFailed(f"Unexpected error: {err}") from err

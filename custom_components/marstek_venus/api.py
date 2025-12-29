@@ -225,6 +225,9 @@ class MarstekApiClient:
         # Update last request time
         self._last_request_time = time.monotonic()
 
+        # Track request timing for diagnostics
+        request_start = time.monotonic()
+
         # Generate unique request ID
         request_id = self._get_next_id()
 
@@ -247,16 +250,27 @@ class MarstekApiClient:
 
             # Wait for response with timeout
             result = await asyncio.wait_for(future, timeout=timeout)
+
+            # Calculate ping time
+            ping_time = (time.monotonic() - request_start) * 1000  # milliseconds
+            self._last_ping_time = ping_time
+
             return result
 
         except asyncio.TimeoutError:
             # Clean up pending request on timeout
+            self._last_ping_time = None
             self.protocol.pending_requests.pop(request_id, None)
             raise
         except Exception:
             # Clean up pending request on any error
+            self._last_ping_time = None
             self.protocol.pending_requests.pop(request_id, None)
             raise
+
+    def get_last_ping_time(self) -> Optional[float]:
+        """Get last successful request ping time in milliseconds."""
+        return getattr(self, '_last_ping_time', None)
 
     async def get_device_info(self) -> Dict[str, Any]:
         """
