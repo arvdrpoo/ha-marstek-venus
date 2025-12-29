@@ -18,44 +18,50 @@ A custom Home Assistant integration for the Marstek Venus E 3 home battery syste
 
 ## Installation
 
-### HACS (Recommended)
+### Prerequisites
 
-1. Open HACS in your Home Assistant instance
-2. Click on "Integrations"
-3. Click the three dots in the top right corner
-4. Select "Custom repositories"
-5. Add this repository URL: `https://github.com/arvdrpoo/ha-marstek-venus-e`
-6. Select "Integration" as the category
-7. Click "Add"
-8. Find "Marstek Venus E" in the integration list and install it
-9. Restart Home Assistant
+Before installation:
+- Home Assistant 2024.1.0 or later
+- HACS installed ([installation guide](https://hacs.xyz/docs/setup/download))
+- Marstek Venus E device connected to your network
+- Open API enabled in the Marstek mobile app (Settings > Enable Open API)
+- Device IP address (find in router or Marstek app)
+
+### HACS Installation (Recommended)
+
+1. **Add Custom Repository**
+   - Open HACS > Integrations
+   - Click menu (⋮) > Custom repositories
+   - Add repository: `https://github.com/arvdrpoo/ha-marstek-venus-e`
+   - Category: `Integration`
+   - Click Add
+
+2. **Install Integration**
+   - Click "Explore & Download Repositories"
+   - Search for "Marstek Venus E"
+   - Click Download
+   - Restart Home Assistant
+
+3. **Add Integration**
+   - Go to Settings > Devices & Services
+   - Click "+ Add Integration"
+   - Search for "Marstek Venus E"
+   - Enter your device IP address (e.g., `192.168.1.100`)
+   - Optionally configure port (default: 30000) and device name
+   - Click Submit
 
 ### Manual Installation
 
-1. Copy the `custom_components/marstek_venus_e` folder to your Home Assistant's `custom_components` directory
-2. Restart Home Assistant
+1. Download the [latest release](https://github.com/arvdrpoo/ha-marstek-venus-e/releases)
+2. Copy `custom_components/marstek_venus_e` to your `config/custom_components/` directory
+3. Restart Home Assistant
+4. Follow step 3 above to add the integration
 
-## Configuration
+### Common Setup Issues
 
-### Prerequisites
-
-Before adding the integration, ensure that:
-
-1. Your Marstek Venus E device is connected to your home network
-2. The Open API feature has been enabled in the Marstek mobile app
-3. You know the IP address of your device (check your router or the Marstek app)
-4. Optional: Configure a static IP address for your device in your router settings
-
-### Adding the Integration
-
-1. In Home Assistant, go to **Settings** > **Devices & Services**
-2. Click the **+ Add Integration** button
-3. Search for "Marstek Venus E"
-4. Enter your device's IP address
-5. Optionally change the UDP port (default: 30000) and device name
-6. Click **Submit**
-
-The integration will validate the connection and create the device with all entities.
+- **Cannot connect**: Verify IP address, ensure device is powered on and Open API is enabled
+- **Port error**: Use default port 30000 unless specifically changed
+- **Entities unavailable**: Wait 30-60 seconds for first update, check logs if persists
 
 ## Entities
 
