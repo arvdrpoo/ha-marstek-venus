@@ -1063,7 +1063,7 @@ class DeviceFirmwareSensor(MarstekSensorBase):
         super().__init__(
             coordinator, entry, device_info_dict, "device_firmware", "Firmware Version", device_info
         )
-        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_registry_enabled_default = True  # Enabled by default - useful for support and compatibility checks
         self._device_info_dict = device_info_dict
 
     @property
@@ -1088,7 +1088,7 @@ class DeviceModelSensor(MarstekSensorBase):
         super().__init__(
             coordinator, entry, device_info_dict, "device_model", "Device Model", device_info
         )
-        self._attr_entity_registry_enabled_default = False
+        self._attr_entity_registry_enabled_default = True  # Enabled by default - useful for device identification
         self._device_info_dict = device_info_dict
 
     @property

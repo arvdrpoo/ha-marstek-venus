@@ -54,6 +54,7 @@ class ConnectionStatusBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_registry_enabled_default = True  # Enabled by default - essential for monitoring device health
 
     def __init__(
         self,
