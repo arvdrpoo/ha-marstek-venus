@@ -118,3 +118,55 @@ set_mode_passive:
           max: 86400
           unit_of_measurement: s
           mode: box
+
+set_manual_schedules_bulk:
+  name: Set Multiple Manual Schedules
+  description: Configure multiple manual mode time schedules at once
+  target:
+    entity:
+      integration: marstek_venus
+      domain: select
+  fields:
+    schedules:
+      name: Schedule List
+      description: List of schedule configurations (time_slot, start_time, end_time, power, days, enabled)
+      required: true
+      example:
+        - time_slot: 0
+          start_time: "08:00"
+          end_time: "12:00"
+          power: -1000
+          days: ["mon", "tue", "wed", "thu", "fri"]
+          enabled: true
+        - time_slot: 1
+          start_time: "18:00"
+          end_time: "22:00"
+          power: 500
+          days: ["mon", "tue", "wed", "thu", "fri"]
+          enabled: true
+      selector:
+        object:
+
+refresh_data:
+  name: Refresh Data
+  description: Force an immediate update of all sensor data from the device
+  target:
+    entity:
+      integration: marstek_venus
+      domain: select
+
+test_connection:
+  name: Test Connection
+  description: Test connectivity to the device and report diagnostics. Fires a marstek_venus_connection_test event with results.
+  target:
+    entity:
+      integration: marstek_venus
+      domain: select
+
+get_mode_details:
+  name: Get Mode Details
+  description: Get detailed information about the current operating mode. Fires a marstek_venus_mode_details event with results.
+  target:
+    entity:
+      integration: marstek_venus
+      domain: select

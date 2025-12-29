@@ -1,4 +1,5 @@
 """Sensor platform for Marstek Venus E."""
+from datetime import datetime
 import logging
 from typing import Any, Dict, Optional
 
@@ -15,7 +16,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -80,6 +81,7 @@ async def async_setup_entry(
         BatteryChargeFlagSensor(coordinator, entry, device_info, main_device_info),
         BatteryDischargeFlagSensor(coordinator, entry, device_info, main_device_info),
         BatteryRatedCapacitySensor(coordinator, entry, device_info, main_device_info),
+        BatteryStateSensor(coordinator, entry, device_info, main_device_info),
 
         # Power flow sensors (from ES.GetStatus)
         PvPowerSensor(coordinator, entry, device_info, main_device_info),
@@ -112,6 +114,15 @@ async def async_setup_entry(
 
         # Bluetooth sensor (from BLE.GetStatus)
         BluetoothStateSensor(coordinator, entry, device_info, main_device_info),
+
+        # Diagnostic sensors (disabled by default)
+        DiagnosticRequestCountSensor(coordinator, entry, device_info, main_device_info),
+        DiagnosticErrorRateSensor(coordinator, entry, device_info, main_device_info),
+        DiagnosticAvgResponseTimeSensor(coordinator, entry, device_info, main_device_info),
+        DiagnosticLastUpdateTimeSensor(coordinator, entry, device_info, main_device_info),
+        DiagnosticPingTimeSensor(coordinator, entry, device_info, main_device_info),
+        DeviceFirmwareSensor(coordinator, entry, device_info, main_device_info),
+        DeviceModelSensor(coordinator, entry, device_info, main_device_info),
     ]
 
     # Add all entities to Home Assistant
@@ -306,7 +317,7 @@ class BatteryTemperatureSensor(MarstekSensorBase):
         self._attr_device_class = SensorDeviceClass.TEMPERATURE
         self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_registry_enabled_default = False  # Disabled by default
+        self._attr_entity_registry_enabled_default = True  # Enabled by default for battery health monitoring
 
     @property
     def native_value(self) -> Optional[float]:
@@ -388,6 +399,40 @@ class BatteryRatedCapacitySensor(MarstekSensorBase):
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
         return self._get_value("bat", "rated_capacity")
+
+
+class BatteryStateSensor(MarstekSensorBase):
+    """Battery charging/discharging state sensor."""
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "battery_state", "Battery State", device_info
+        )
+
+        self._attr_device_class = SensorDeviceClass.ENUM
+        self._attr_options = ["Charging", "Discharging", "Idle", "Unknown"]
+        self._attr_icon = "mdi:battery-arrow-up-down"
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        bat_power = self._get_value("es", "bat_power")
+
+        if bat_power is None:
+            return "Unknown"
+        elif bat_power > 10:  # Threshold to avoid noise
+            return "Charging"
+        elif bat_power < -10:
+            return "Discharging"
+        else:
+            return "Idle"
 
 
 # ============================================================================
@@ -514,6 +559,23 @@ class LoadPowerSensor(MarstekSensorBase):
 
 # ============================================================================
 # Energy Total Sensors
+#
+# These sensors are configured for Home Assistant Energy Dashboard:
+# - device_class: ENERGY (identifies as energy sensor)
+# - state_class: TOTAL_INCREASING (cumulative counter)
+# - unit: Wh (watt-hours)
+#
+# Energy Dashboard Configuration:
+# 1. Go to Settings > Dashboards > Energy
+# 2. Configure energy sources:
+#    - Solar Production: Use "Total Solar Energy"
+#    - Grid Import: Use "Total Grid Import Energy"
+#    - Grid Export: Use "Total Grid Export Energy"
+#    - Home Consumption: Use "Total Load Energy"
+# 3. The dashboard will automatically convert Wh to kWh for display
+#
+# Note: These are cumulative totals from device. They should never decrease.
+# If a sensor resets to 0, it may cause issues in long-term statistics.
 # ============================================================================
 
 
@@ -844,3 +906,192 @@ class BluetoothStateSensor(MarstekSensorBase):
     def native_value(self) -> Optional[str]:
         """Return the state of the sensor."""
         return self._get_value("ble", "state")
+
+
+# ============================================================================
+# Diagnostic Sensors
+# ============================================================================
+
+
+class DiagnosticRequestCountSensor(MarstekSensorBase):
+    """Total API requests sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "diagnostic_requests", "API Requests", device_info
+        )
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[int]:
+        """Return the state of the sensor."""
+        stats = self.coordinator.get_stats()
+        return stats.get("request_count")
+
+
+class DiagnosticErrorRateSensor(MarstekSensorBase):
+    """API error rate sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "diagnostic_error_rate", "API Error Rate", device_info
+        )
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        stats = self.coordinator.get_stats()
+        return stats.get("error_rate")
+
+
+class DiagnosticAvgResponseTimeSensor(MarstekSensorBase):
+    """Average API response time sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "diagnostic_avg_response", "Average Response Time", device_info
+        )
+        self._attr_native_unit_of_measurement = "s"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        stats = self.coordinator.get_stats()
+        return stats.get("average_response_time")
+
+
+class DiagnosticLastUpdateTimeSensor(MarstekSensorBase):
+    """Last successful update timestamp sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "diagnostic_last_update", "Last Update", device_info
+        )
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[datetime]:
+        """Return the state of the sensor."""
+        if self.coordinator.last_update_success_time:
+            return self.coordinator.last_update_success_time
+        return None
+
+
+class DiagnosticPingTimeSensor(MarstekSensorBase):
+    """Last API ping time sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "diagnostic_ping_time", "Ping Time", device_info
+        )
+        self._attr_native_unit_of_measurement = "ms"
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[float]:
+        """Return the state of the sensor."""
+        ping = self.coordinator.client.get_last_ping_time()
+        return round(ping, 1) if ping is not None else None
+
+
+class DeviceFirmwareSensor(MarstekSensorBase):
+    """Device firmware version sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "device_firmware", "Firmware Version", device_info
+        )
+        self._attr_entity_registry_enabled_default = False
+        self._device_info_dict = device_info_dict
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        return str(self._device_info_dict.get("ver", "Unknown"))
+
+
+class DeviceModelSensor(MarstekSensorBase):
+    """Device model sensor."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(
+            coordinator, entry, device_info_dict, "device_model", "Device Model", device_info
+        )
+        self._attr_entity_registry_enabled_default = False
+        self._device_info_dict = device_info_dict
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        return self._device_info_dict.get("device", "Unknown")

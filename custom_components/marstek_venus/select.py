@@ -81,6 +81,41 @@ async def async_setup_entry(
         "async_set_passive_mode",
     )
 
+    platform.async_register_entity_service(
+        "set_manual_schedules_bulk",
+        {
+            vol.Required("schedules"): [
+                {
+                    vol.Required("time_slot"): cv.positive_int,
+                    vol.Required("start_time"): str,
+                    vol.Required("end_time"): str,
+                    vol.Required("power"): int,
+                    vol.Required("days"): [str],
+                    vol.Optional("enabled", default=True): cv.boolean,
+                }
+            ]
+        },
+        "async_set_manual_schedules_bulk",
+    )
+
+    platform.async_register_entity_service(
+        "refresh_data",
+        {},
+        "async_refresh_data",
+    )
+
+    platform.async_register_entity_service(
+        "test_connection",
+        {},
+        "async_test_connection",
+    )
+
+    platform.async_register_entity_service(
+        "get_mode_details",
+        {},
+        "async_get_mode_details",
+    )
+
 
 class MarstekModeSelect(CoordinatorEntity, SelectEntity):
     """
@@ -254,6 +289,29 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
             days: List of day codes (mon, tue, wed, thu, fri, sat, sun)
             enabled: Whether to enable this schedule
         """
+        # Validation
+        import re
+
+        if not (0 <= time_slot <= 9):
+            raise ValueError(f"time_slot must be 0-9, got {time_slot}")
+
+        # Validate time format (HH:MM)
+        time_pattern = re.compile(r'^([0-1][0-9]|2[0-3]):([0-5][0-9])$')
+        if not time_pattern.match(start_time):
+            raise ValueError(f"start_time must be HH:MM format, got {start_time}")
+        if not time_pattern.match(end_time):
+            raise ValueError(f"end_time must be HH:MM format, got {end_time}")
+
+        # Validate power range (device specific)
+        if not (-5000 <= power <= 5000):
+            raise ValueError(f"power must be -5000 to 5000W, got {power}")
+
+        # Validate days
+        valid_days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        for day in days:
+            if day.lower() not in valid_days:
+                raise ValueError(f"Invalid day: {day}. Must be one of {valid_days}")
+
         _LOGGER.info(
             "Setting Manual mode: slot %d, %s-%s, %dW, days=%s, enabled=%s",
             time_slot, start_time, end_time, power, days, enabled
@@ -322,3 +380,120 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
 
         except MarstekApiError as err:
             _LOGGER.error("Error setting mode to %s: %s", mode, err)
+
+    async def async_set_manual_schedules_bulk(self, schedules: list) -> None:
+        """
+        Set multiple manual mode schedules at once.
+
+        Args:
+            schedules: List of schedule dictionaries, each containing:
+                - time_slot: int (0-9)
+                - start_time: str (HH:MM)
+                - end_time: str (HH:MM)
+                - power: int (watts)
+                - days: list of day codes
+                - enabled: bool
+        """
+        _LOGGER.info("Setting %d manual schedules in bulk", len(schedules))
+
+        for i, schedule in enumerate(schedules):
+            try:
+                await self.async_set_manual_mode(
+                    time_slot=schedule["time_slot"],
+                    start_time=schedule["start_time"],
+                    end_time=schedule["end_time"],
+                    power=schedule["power"],
+                    days=schedule["days"],
+                    enabled=schedule.get("enabled", True)
+                )
+                # Rate limiting handled by API client
+                _LOGGER.debug("Set schedule %d/%d", i + 1, len(schedules))
+            except Exception as err:
+                _LOGGER.error("Failed to set schedule %d: %s", i, err)
+                raise
+
+    async def async_refresh_data(self) -> None:
+        """Force refresh coordinator data."""
+        _LOGGER.info("Manual data refresh requested")
+        await self.coordinator.async_request_refresh()
+
+    async def async_test_connection(self) -> Dict[str, Any]:
+        """
+        Test connection to device and return diagnostics.
+
+        Returns:
+            Dictionary with connection test results
+        """
+        import time
+        _LOGGER.info("Testing connection to device")
+
+        results = {
+            "success": False,
+            "ping_time_ms": None,
+            "device_reachable": False,
+            "api_responsive": False,
+            "error": None
+        }
+
+        try:
+            start = time.monotonic()
+            device_info = await self._client.get_device_info()
+            duration_ms = (time.monotonic() - start) * 1000
+
+            results["success"] = True
+            results["ping_time_ms"] = round(duration_ms, 1)
+            results["device_reachable"] = True
+            results["api_responsive"] = True
+            results["firmware_version"] = device_info.get("ver")
+            results["device_model"] = device_info.get("device")
+
+            _LOGGER.info("Connection test successful: %s ms", results["ping_time_ms"])
+
+        except Exception as err:
+            results["error"] = str(err)
+            _LOGGER.error("Connection test failed: %s", err)
+
+        # Fire event with results so automation can respond
+        self.hass.bus.fire(
+            f"{DOMAIN}_connection_test",
+            {
+                "entity_id": self.entity_id,
+                "results": results
+            }
+        )
+
+        return results
+
+    async def async_get_mode_details(self) -> Dict[str, Any]:
+        """
+        Get detailed current mode configuration.
+
+        Returns:
+            Dictionary with current mode details from ES.GetMode
+        """
+        _LOGGER.info("Getting current mode details")
+
+        try:
+            mode_data = await self._client.get_mode()
+
+            details = {
+                "mode": mode_data.get("mode", "Unknown"),
+                "ongrid_power": mode_data.get("ongrid_power"),
+                "offgrid_power": mode_data.get("offgrid_power"),
+                "battery_soc": mode_data.get("bat_soc"),
+            }
+
+            # Fire event with details
+            self.hass.bus.fire(
+                f"{DOMAIN}_mode_details",
+                {
+                    "entity_id": self.entity_id,
+                    "details": details
+                }
+            )
+
+            return details
+
+        except Exception as err:
+            _LOGGER.error("Failed to get mode details: %s", err)
+            raise
