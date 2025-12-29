@@ -1,5 +1,5 @@
 [project]
-name = "ha-marstek-venus-e"
+name = "ha-marstek-venus"
 version = "0.1.0"
 description = "Home Assistant integration for Marstek Venus battery system"
 readme = "README.md"
