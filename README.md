@@ -1,6 +1,6 @@
-# Marstek Venus E 3 - Home Assistant Integration
+# Marstek Venus - Home Assistant Integration
 
-A custom Home Assistant integration for the Marstek Venus E 3 home battery system, using its local UDP API.
+A custom Home Assistant integration for the Marstek Venus home battery system, using its local UDP API.
 
 ## Features
 
@@ -14,7 +14,8 @@ A custom Home Assistant integration for the Marstek Venus E 3 home battery syste
 
 ## Supported Devices
 
-- Marstek Venus E 3 (tested and confirmed working)
+- Marstek Venus 3 (tested and confirmed working)
+- Other Marstek Venus models may also work
 
 ## Installation
 
@@ -23,7 +24,7 @@ A custom Home Assistant integration for the Marstek Venus E 3 home battery syste
 Before installation:
 - Home Assistant 2024.1.0 or later
 - HACS installed ([installation guide](https://hacs.xyz/docs/setup/download))
-- Marstek Venus E device connected to your network
+- Marstek Venus device connected to your network
 - Open API enabled in the Marstek mobile app (Settings > Enable Open API)
 - Device IP address (find in router or Marstek app)
 
@@ -38,14 +39,14 @@ Before installation:
 
 2. **Install Integration**
    - Click "Explore & Download Repositories"
-   - Search for "Marstek Venus E"
+   - Search for "Marstek Venus"
    - Click Download
    - Restart Home Assistant
 
 3. **Add Integration**
    - Go to Settings > Devices & Services
    - Click "+ Add Integration"
-   - Search for "Marstek Venus E"
+   - Search for "Marstek Venus"
    - Enter your device IP address (e.g., `192.168.1.100`)
    - Optionally configure port (default: 30000) and device name
    - Click Submit

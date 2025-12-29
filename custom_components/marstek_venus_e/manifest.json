@@ -1,6 +1,6 @@
 {
   "domain": "marstek_venus_e",
-  "name": "Marstek Venus E",
+  "name": "Marstek Venus",
   "codeowners": ["@arvdrpoo"],
   "config_flow": true,
   "documentation": "https://github.com/arvdrpoo/ha-marstek-venus-e",

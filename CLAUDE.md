@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Home Assistant custom integration for the Marstek Venus E 3 home battery system. The integration communicates with the device using its local UDP API to monitor battery status, energy flow, and control operating modes.
+This is a Home Assistant custom integration for the Marstek Venus home battery system. The integration communicates with the device using its local UDP API to monitor battery status, energy flow, and control operating modes.
 
 ## Marstek API Architecture
 
