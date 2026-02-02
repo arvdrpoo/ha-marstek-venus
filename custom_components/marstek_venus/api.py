@@ -1,4 +1,5 @@
 """Marstek Venus E API Client using UDP."""
+
 import asyncio
 import json
 import logging
@@ -10,6 +11,10 @@ TIMEOUT = 10
 
 # Minimum time between requests (Venus E 3 requires 2+ seconds)
 MIN_REQUEST_INTERVAL = 2.5
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.0  # Base delay in seconds for exponential backoff
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,9 +80,13 @@ class MarstekProtocol(asyncio.DatagramProtocol):
                 # ID 0 is often used for unsolicited status updates from the device
                 # Log at debug level to avoid cluttering logs
                 if request_id == 0:
-                    _LOGGER.debug("Received unsolicited message from device: %s", response)
+                    _LOGGER.debug(
+                        "Received unsolicited message from device: %s", response
+                    )
                 else:
-                    _LOGGER.warning("Received unexpected response with ID %s", request_id)
+                    _LOGGER.warning(
+                        "Received unexpected response with ID %s", request_id
+                    )
                 return
 
             # Check if response contains an error
@@ -147,6 +156,11 @@ class MarstekApiClient:
         self._request_id = 0  # Counter for generating unique request IDs
         self._last_request_time = 0.0  # Track last request time for rate limiting
 
+        # Diagnostic tracking
+        self._request_stats: Dict[str, Dict[str, Any]] = {}
+        self._consecutive_failures = 0
+        self._last_successful_request = None
+
     async def connect(self) -> None:
         """
         Establish UDP connection to the device.
@@ -159,8 +173,7 @@ class MarstekApiClient:
             # This returns (transport, protocol)
             loop = asyncio.get_event_loop()
             _, self.protocol = await loop.create_datagram_endpoint(
-                MarstekProtocol,
-                remote_addr=(self.host, self.port)
+                MarstekProtocol, remote_addr=(self.host, self.port)
             )
             _LOGGER.info("Connected to Marstek device at %s:%s", self.host, self.port)
         except Exception as err:
@@ -182,24 +195,80 @@ class MarstekApiClient:
         self._request_id += 1
         return self._request_id
 
-    async def send_command(
+    def _update_stats(
+        self, method: str, success: bool, duration: float, error: Optional[str] = None
+    ) -> None:
+        """Update diagnostic statistics for a method."""
+        if method not in self._request_stats:
+            self._request_stats[method] = {
+                "total_calls": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "timeout_count": 0,
+                "api_error_count": 0,
+                "total_duration": 0.0,
+                "last_error": None,
+                "last_success": None,
+            }
+
+        stats = self._request_stats[method]
+        stats["total_calls"] += 1
+        stats["total_duration"] += duration
+
+        if success:
+            stats["success_count"] += 1
+            stats["last_success"] = time.time()
+            self._consecutive_failures = 0
+            self._last_successful_request = time.time()
+        else:
+            stats["failure_count"] += 1
+            stats["last_error"] = error
+            self._consecutive_failures += 1
+
+            if error and "timeout" in error.lower():
+                stats["timeout_count"] += 1
+            elif error and "API Error" in error:
+                stats["api_error_count"] += 1
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get diagnostic information about API calls."""
+        diagnostics = {
+            "consecutive_failures": self._consecutive_failures,
+            "last_successful_request": self._last_successful_request,
+            "methods": {},
+        }
+
+        for method, stats in self._request_stats.items():
+            avg_duration = 0.0
+            if stats["total_calls"] > 0:
+                avg_duration = stats["total_duration"] / stats["total_calls"]
+
+            success_rate = 0.0
+            if stats["total_calls"] > 0:
+                success_rate = (stats["success_count"] / stats["total_calls"]) * 100
+
+            diagnostics["methods"][method] = {
+                "total_calls": stats["total_calls"],
+                "success_rate": round(success_rate, 1),
+                "timeout_count": stats["timeout_count"],
+                "api_error_count": stats["api_error_count"],
+                "avg_duration_ms": round(avg_duration * 1000, 1),
+                "last_error": stats["last_error"],
+            }
+
+        return diagnostics
+
+    async def _send_command_once(
         self,
         method: str,
         params: Optional[Dict[str, Any]] = None,
-        timeout: float = TIMEOUT
+        timeout: float = TIMEOUT,
     ) -> Dict[str, Any]:
         """
-        Send a command to the device and wait for response.
-
-        This is the core method that all other API methods use.
-        It handles:
-        - Creating the JSON-RPC request
-        - Sending it over UDP
-        - Waiting for the response with timeout
-        - Error handling
+        Send a command to the device once (no retry).
 
         Args:
-            method: The API method name (e.g., "Marstek.GetDevice")
+            method: The API method name
             params: Optional parameters dictionary
             timeout: Response timeout in seconds
 
@@ -207,7 +276,7 @@ class MarstekApiClient:
             The result dictionary from the device response
 
         Raises:
-            MarstekConnectionError: If not connected or connection fails
+            MarstekConnectionError: If not connected
             MarstekApiError: If device returns an error
             asyncio.TimeoutError: If response takes too long
         """
@@ -219,24 +288,19 @@ class MarstekApiClient:
         elapsed = current_time - self._last_request_time
         if elapsed < MIN_REQUEST_INTERVAL:
             sleep_time = MIN_REQUEST_INTERVAL - elapsed
-            _LOGGER.debug("Rate limiting: sleeping %.2fs before next request", sleep_time)
+            _LOGGER.debug(
+                "Rate limiting: sleeping %.2fs before next request", sleep_time
+            )
             await asyncio.sleep(sleep_time)
 
         # Update last request time
         self._last_request_time = time.monotonic()
 
-        # Track request timing for diagnostics
-        request_start = time.monotonic()
-
         # Generate unique request ID
         request_id = self._get_next_id()
 
         # Build the JSON-RPC request
-        request = {
-            "id": request_id,
-            "method": method,
-            "params": params or {}
-        }
+        request = {"id": request_id, "method": method, "params": params or {}}
 
         # Create a Future to wait for the response
         future = asyncio.get_event_loop().create_future()
@@ -250,27 +314,143 @@ class MarstekApiClient:
 
             # Wait for response with timeout
             result = await asyncio.wait_for(future, timeout=timeout)
-
-            # Calculate ping time
-            ping_time = (time.monotonic() - request_start) * 1000  # milliseconds
-            self._last_ping_time = ping_time
-
             return result
 
-        except asyncio.TimeoutError:
-            # Clean up pending request on timeout
-            self._last_ping_time = None
+        finally:
+            # Always clean up pending request
             self.protocol.pending_requests.pop(request_id, None)
-            raise
-        except Exception:
-            # Clean up pending request on any error
-            self._last_ping_time = None
-            self.protocol.pending_requests.pop(request_id, None)
-            raise
+
+    async def send_command(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: float = TIMEOUT,
+        retries: int = MAX_RETRIES,
+    ) -> Dict[str, Any]:
+        """
+        Send a command to the device and wait for response with retry logic.
+
+        This is the core method that all other API methods use.
+        It handles:
+        - Creating the JSON-RPC request
+        - Sending it over UDP
+        - Waiting for the response with timeout
+        - Automatic retry with exponential backoff on timeout
+        - Diagnostic tracking
+
+        Args:
+            method: The API method name (e.g., "Marstek.GetDevice")
+            params: Optional parameters dictionary
+            timeout: Response timeout in seconds
+            retries: Number of retry attempts (default: MAX_RETRIES)
+
+        Returns:
+            The result dictionary from the device response
+
+        Raises:
+            MarstekConnectionError: If not connected or connection fails
+            MarstekApiError: If device returns an error
+            asyncio.TimeoutError: If all retry attempts timeout
+        """
+        request_start = time.monotonic()
+        last_error: Optional[Exception] = None
+
+        for attempt in range(retries + 1):
+            attempt_start = time.monotonic()
+
+            try:
+                result = await self._send_command_once(method, params, timeout)
+
+                # Success - update stats and return
+                duration = time.monotonic() - request_start
+                self._update_stats(method, success=True, duration=duration)
+
+                # Calculate ping time
+                ping_time = (time.monotonic() - attempt_start) * 1000
+                self._last_ping_time = ping_time
+
+                if attempt > 0:
+                    _LOGGER.info(
+                        "Request %s succeeded on attempt %d/%d",
+                        method,
+                        attempt + 1,
+                        retries + 1,
+                    )
+
+                return result
+
+            except asyncio.TimeoutError as err:
+                last_error = err
+                if attempt < retries:
+                    # Calculate exponential backoff delay
+                    delay = RETRY_BASE_DELAY * (2**attempt)
+                    _LOGGER.warning(
+                        "Request %s timed out (attempt %d/%d), retrying in %.1fs",
+                        method,
+                        attempt + 1,
+                        retries + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    _LOGGER.error(
+                        "Request %s failed after %d attempts due to timeout",
+                        method,
+                        retries + 1,
+                    )
+
+            except MarstekApiError as err:
+                # API errors (method not found, invalid request) should not be retried
+                duration = time.monotonic() - request_start
+                self._update_stats(
+                    method, success=False, duration=duration, error=str(err)
+                )
+                self._last_ping_time = None
+                _LOGGER.warning("Request %s failed with API error: %s", method, err)
+                raise
+
+            except MarstekConnectionError as err:
+                # Connection errors might be recoverable with retry
+                last_error = err
+                if attempt < retries:
+                    delay = RETRY_BASE_DELAY * (2**attempt)
+                    _LOGGER.warning(
+                        "Request %s connection error (attempt %d/%d): %s, retrying in %.1fs",
+                        method,
+                        attempt + 1,
+                        retries + 1,
+                        err,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    _LOGGER.error(
+                        "Request %s failed after %d attempts due to connection error: %s",
+                        method,
+                        retries + 1,
+                        err,
+                    )
+
+        # All retries exhausted
+        duration = time.monotonic() - request_start
+        error_msg = str(last_error) if last_error else "Unknown error"
+        self._update_stats(method, success=False, duration=duration, error=error_msg)
+        self._last_ping_time = None
+
+        if isinstance(last_error, asyncio.TimeoutError):
+            raise asyncio.TimeoutError(
+                f"Request {method} timed out after {retries + 1} attempts"
+            ) from last_error
+        elif isinstance(last_error, MarstekConnectionError):
+            raise last_error
+        else:
+            raise MarstekConnectionError(
+                f"Request {method} failed after {retries + 1} attempts: {error_msg}"
+            ) from last_error
 
     def get_last_ping_time(self) -> Optional[float]:
         """Get last successful request ping time in milliseconds."""
-        return getattr(self, '_last_ping_time', None)
+        return getattr(self, "_last_ping_time", None)
 
     async def get_device_info(self) -> Dict[str, Any]:
         """
@@ -472,13 +652,7 @@ class MarstekApiClient:
                 "passive_cfg": {"power": 100, "cd_time": 300}
             })
         """
-        params = {
-            "id": 0,
-            "config": {
-                "mode": mode,
-                **config
-            }
-        }
+        params = {"id": 0, "config": {"mode": mode, **config}}
         result = await self.send_command("ES.SetMode", params)
         # Result should contain set_result: true/false
         return result.get("set_result", False)
