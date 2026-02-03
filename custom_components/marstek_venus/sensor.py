@@ -297,8 +297,24 @@ class BatteryPowerSensor(MarstekSensorBase):
 
     @property
     def native_value(self) -> Optional[float]:
-        """Return the state of the sensor."""
-        return self._get_value("es", "bat_power")
+        """Return the state of the sensor.
+
+        If bat_power is not provided by the device, calculate it from
+        energy balance: Battery Power = PV Power - Grid Power - Load Power
+        """
+        bat_power = self._get_value("es", "bat_power")
+        if bat_power is not None:
+            return bat_power
+
+        # Calculate from energy balance for devices that don't provide bat_power
+        pv_power = self._get_value("es", "pv_power")
+        ongrid_power = self._get_value("es", "ongrid_power")
+        offgrid_power = self._get_value("es", "offgrid_power")
+
+        if pv_power is None or ongrid_power is None or offgrid_power is None:
+            return None
+
+        return pv_power - ongrid_power - offgrid_power
 
 
 class BatteryTemperatureSensor(MarstekSensorBase):
@@ -420,10 +436,26 @@ class BatteryStateSensor(MarstekSensorBase):
         self._attr_options = ["Charging", "Discharging", "Idle", "Unknown"]
         self._attr_icon = "mdi:battery-arrow-up-down"
 
+    def _get_bat_power(self) -> Optional[float]:
+        """Get battery power, calculating from energy balance if not provided."""
+        bat_power = self._get_value("es", "bat_power")
+        if bat_power is not None:
+            return bat_power
+
+        # Calculate from energy balance
+        pv_power = self._get_value("es", "pv_power")
+        ongrid_power = self._get_value("es", "ongrid_power")
+        offgrid_power = self._get_value("es", "offgrid_power")
+
+        if pv_power is None or ongrid_power is None or offgrid_power is None:
+            return None
+
+        return pv_power - ongrid_power - offgrid_power
+
     @property
     def native_value(self) -> Optional[str]:
         """Return the state of the sensor."""
-        bat_power = self._get_value("es", "bat_power")
+        bat_power = self._get_bat_power()
 
         if bat_power is None:
             return "Unknown"
