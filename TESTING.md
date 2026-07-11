@@ -13,10 +13,10 @@ Test the UDP API communication without installing into Home Assistant.
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Run the test script with uv (no venv needed!)
-uv run test_connection.py 192.168.1.100
+uv run test_device.py 192.168.1.100
 
 # Or specify a custom port
-uv run test_connection.py 192.168.1.100 30000
+uv run test_device.py 192.168.1.100 30000
 ```
 
 ### Option 2: Using `venv`
@@ -31,7 +31,7 @@ source venv/bin/activate  # On macOS/Linux
 .\venv\Scripts\activate   # On Windows
 
 # Run the test
-python test_connection.py 192.168.1.100
+python test_device.py 192.168.1.100
 
 # When done, deactivate
 deactivate
@@ -139,25 +139,26 @@ Restart HA to load the new integration:
 
 ### Step 4: Verify Entities
 
-After adding, you should see:
+After adding, you should see one device with roughly two dozen entities
+(exact count depends on your hardware and which optional sensors you enable):
 
-**Sensors (11 total):**
+**Battery:** SOC (%), Capacity (Wh), Total Capacity (Wh), Power (W),
+Temperature (°C), State (Charging/Discharging/Idle).
 
-- Battery (%)
-- Battery Capacity (Wh)
-- Battery Power (W)
-- Battery Temperature (°C)
-- Solar Power (W)
-- Grid Power (W)
-- Load Power (W)
-- Total Solar Energy (Wh)
-- Total Grid Import Energy (Wh)
-- Total Grid Export Energy (Wh)
-- Total Load Energy (Wh)
+**Power flows:** Solar Power, Grid Power, Load Power (W).
 
-**Controls (1 total):**
+**Energy totals:** Total Solar / Grid Import / Grid Export / Load Energy (Wh).
 
-- Operating Mode (select: Auto/AI/Passive)
+**CT Meter (separate device):** CT State, Phase A/B/C Power, Total CT Power (W).
+
+**Mode:** Operating Mode sensor + Operating Mode select (Auto/AI/Manual/Passive).
+
+**Diagnostic:** Connection (binary), Last Seen (timestamp), Firmware, Model,
+plus request/error/response-time counters (most disabled by default).
+
+**Optional (off by default):** WiFi signal/SSID, Bluetooth state, PV
+voltage/current. Enable these in the integration's options; the PV sensors
+apply to Venus D only.
 
 ### Step 5: Check Logs
 
@@ -281,7 +282,7 @@ asyncio.run(test_mode_change())
 
 ```bash
 # Watch sensor values update
-watch -n 5 'python test_connection.py 192.168.1.100'
+watch -n 5 'python test_device.py 192.168.1.100'
 ```
 
 ## Development Testing
@@ -328,6 +329,6 @@ If you encounter issues:
 2. Review the [API documentation](docs/MarstekDeviceOpenApi.pdf)
 3. Check Home Assistant logs for detailed error messages
 4. Open an issue on GitHub with:
-   - Output from `test_connection.py`
+   - Output from `test_device.py`
    - Relevant HA log entries
    - Device model and firmware version

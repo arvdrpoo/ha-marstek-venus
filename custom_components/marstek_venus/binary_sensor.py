@@ -74,7 +74,17 @@ class ConnectionStatusBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_device_info = device_info
 
     @property
+    def available(self) -> bool:
+        """
+        Always available so it can report the outage.
+
+        A coordinator-backed entity is normally unavailable whenever the last
+        update failed, which would hide exactly the state this sensor exists to
+        report. Keep it available so it can show "disconnected".
+        """
+        return True
+
+    @property
     def is_on(self) -> bool:
-        """Return true if connected."""
-        # Coordinator is available when last update succeeded
+        """Return true if connected (last update succeeded)."""
         return self.coordinator.last_update_success

@@ -20,7 +20,15 @@ from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_ENABLE_BLE_SENSORS,
+    CONF_ENABLE_PV_SENSORS,
+    CONF_ENABLE_WIFI_SENSORS,
+    DEFAULT_ENABLE_BLE_SENSORS,
+    DEFAULT_ENABLE_PV_SENSORS,
+    DEFAULT_ENABLE_WIFI_SENSORS,
+    DOMAIN,
+)
 from .coordinator import MarstekDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,10 +96,6 @@ async def async_setup_entry(
         GridPowerSensor(coordinator, entry, device_info, main_device_info),
         LoadPowerSensor(coordinator, entry, device_info, main_device_info),
 
-        # PV (solar) sensors (from PV.GetStatus - Venus D only)
-        PvVoltageSensor(coordinator, entry, device_info, main_device_info),
-        PvCurrentSensor(coordinator, entry, device_info, main_device_info),
-
         # Energy total sensors (from ES.GetStatus)
         TotalPvEnergySensor(coordinator, entry, device_info, main_device_info),
         TotalGridInputEnergySensor(coordinator, entry, device_info, main_device_info),
@@ -108,22 +112,30 @@ async def async_setup_entry(
         PhaseCPowerSensor(coordinator, entry, device_info, ct_device_info),
         TotalCtPowerSensor(coordinator, entry, device_info, ct_device_info),
 
-        # WiFi sensors (from WiFi.GetStatus)
-        WifiSignalSensor(coordinator, entry, device_info, main_device_info),
-        WifiSsidSensor(coordinator, entry, device_info, main_device_info),
-
-        # Bluetooth sensor (from BLE.GetStatus)
-        BluetoothStateSensor(coordinator, entry, device_info, main_device_info),
-
         # Diagnostic sensors (disabled by default)
         DiagnosticRequestCountSensor(coordinator, entry, device_info, main_device_info),
         DiagnosticErrorRateSensor(coordinator, entry, device_info, main_device_info),
         DiagnosticAvgResponseTimeSensor(coordinator, entry, device_info, main_device_info),
-        DiagnosticLastUpdateTimeSensor(coordinator, entry, device_info, main_device_info),
+        LastSeenSensor(coordinator, entry, device_info, main_device_info),
         DiagnosticPingTimeSensor(coordinator, entry, device_info, main_device_info),
         DeviceFirmwareSensor(coordinator, entry, device_info, main_device_info),
         DeviceModelSensor(coordinator, entry, device_info, main_device_info),
     ]
+
+    # Optional sensors, gated on config options. The coordinator only fetches
+    # the underlying data when the matching option is enabled, so creating
+    # these entities unconditionally would leave them permanently unavailable.
+    if entry.options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS):
+        entities.append(WifiSignalSensor(coordinator, entry, device_info, main_device_info))
+        entities.append(WifiSsidSensor(coordinator, entry, device_info, main_device_info))
+
+    if entry.options.get(CONF_ENABLE_BLE_SENSORS, DEFAULT_ENABLE_BLE_SENSORS):
+        entities.append(BluetoothStateSensor(coordinator, entry, device_info, main_device_info))
+
+    # PV voltage/current come from PV.GetStatus (Venus D only)
+    if entry.options.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS):
+        entities.append(PvVoltageSensor(coordinator, entry, device_info, main_device_info))
+        entities.append(PvCurrentSensor(coordinator, entry, device_info, main_device_info))
 
     # Add all entities to Home Assistant
     async_add_entities(entities)
@@ -227,7 +239,15 @@ class BatterySocSensor(MarstekSensorBase):
     @property
     def native_value(self) -> Optional[float]:
         """Return the state of the sensor."""
-        return self._get_value("bat", "soc")
+        # Bat.GetStatus reports soc as a string; the ES fallback reports a
+        # number. Coerce to float so this numeric sensor never emits a string.
+        soc = self._get_value("bat", "soc")
+        if soc is None:
+            return None
+        try:
+            return float(soc)
+        except (TypeError, ValueError):
+            return None
 
 
 class BatteryCapacitySensor(MarstekSensorBase):
@@ -511,7 +531,6 @@ class PvVoltageSensor(MarstekSensorBase):
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_native_unit_of_measurement = "V"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_registry_enabled_default = False  # Disabled by default (Venus D only)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -535,7 +554,6 @@ class PvCurrentSensor(MarstekSensorBase):
         self._attr_device_class = SensorDeviceClass.CURRENT
         self._attr_native_unit_of_measurement = "A"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_registry_enabled_default = False  # Disabled by default (Venus D only)
 
     @property
     def native_value(self) -> Optional[float]:
@@ -885,7 +903,6 @@ class WifiSignalSensor(MarstekSensorBase):
         self._attr_device_class = SensorDeviceClass.SIGNAL_STRENGTH
         self._attr_native_unit_of_measurement = "dBm"
         self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
     def native_value(self) -> Optional[int]:
@@ -905,8 +922,6 @@ class WifiSsidSensor(MarstekSensorBase):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info_dict, "wifi_ssid", "WiFi Network", device_info)
-
-        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
     def native_value(self) -> Optional[str]:
@@ -931,8 +946,6 @@ class BluetoothStateSensor(MarstekSensorBase):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, entry, device_info_dict, "bluetooth_state", "Bluetooth State", device_info)
-
-        self._attr_entity_registry_enabled_default = False  # Disabled by default
 
     @property
     def native_value(self) -> Optional[str]:
@@ -1025,8 +1038,12 @@ class DiagnosticAvgResponseTimeSensor(MarstekSensorBase):
         return stats.get("average_response_time")
 
 
-class DiagnosticLastUpdateTimeSensor(MarstekSensorBase):
-    """Last successful update timestamp sensor."""
+class LastSeenSensor(MarstekSensorBase):
+    """Timestamp of the last successful contact with the device.
+
+    Stays available during outages so users can see how long the device has
+    been unreachable, and updates automatically once it comes back online.
+    """
 
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
@@ -1039,17 +1056,20 @@ class DiagnosticLastUpdateTimeSensor(MarstekSensorBase):
     ) -> None:
         """Initialize the sensor."""
         super().__init__(
-            coordinator, entry, device_info_dict, "diagnostic_last_update", "Last Update", device_info
+            coordinator, entry, device_info_dict, "diagnostic_last_update", "Last Seen", device_info
         )
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_entity_registry_enabled_default = False
+        self._attr_icon = "mdi:history"
+
+    @property
+    def available(self) -> bool:
+        """Always available so it remains readable during an outage."""
+        return True
 
     @property
     def native_value(self) -> Optional[datetime]:
         """Return the state of the sensor."""
-        if self.coordinator.last_update_success_time:
-            return self.coordinator.last_update_success_time
-        return None
+        return self.coordinator.last_update_time
 
 
 class DiagnosticPingTimeSensor(MarstekSensorBase):

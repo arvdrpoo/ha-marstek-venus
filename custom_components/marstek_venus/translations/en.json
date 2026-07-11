@@ -1,7 +1,15 @@
 {
   "config": {
+    "flow_title": "Marstek Venus ({name})",
     "step": {
       "user": {
+        "title": "Select Marstek device",
+        "description": "Choose a discovered device, or enter its IP address manually.",
+        "data": {
+          "host": "Device"
+        }
+      },
+      "manual": {
         "title": "Connect to Marstek Venus",
         "description": "Enter the IP address of your Marstek Venus device",
         "data": {
@@ -9,15 +17,39 @@
           "port": "UDP Port",
           "name": "Device Name"
         }
+      },
+      "discovery_confirm": {
+        "title": "Marstek Venus discovered",
+        "description": "Do you want to set up the Marstek Venus device at {host}?"
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to device. Please check the IP address and ensure the device is on the network.",
+      "cannot_connect": "Failed to connect to device. Please check the IP address and ensure the device is on the network and its local API is enabled.",
       "timeout": "Connection timed out. Please check your network and device status.",
       "unknown": "An unexpected error occurred. Please try again."
     },
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This device is already configured.",
+      "already_in_progress": "Configuration of this device is already in progress."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Marstek Venus",
+        "description": "Configure update intervals and optional sensors",
+        "data": {
+          "scan_interval": "Update Interval (seconds)",
+          "timeout": "API Timeout (seconds)",
+          "enable_wifi_sensors": "Enable WiFi Sensors",
+          "enable_ble_sensors": "Enable Bluetooth Sensors",
+          "enable_pv_sensors": "Enable PV Sensors (Venus D only)"
+        }
+      }
+    },
+    "error": {
+      "invalid_scan_interval": "Scan interval must be between 15 and 300 seconds",
+      "invalid_timeout": "Timeout must be between 5 and 30 seconds"
     }
   }
 }

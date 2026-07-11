@@ -6,6 +6,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.device_registry import format_mac
 
 from .api import MarstekApiClient, MarstekConnectionError
 from .const import (
@@ -75,11 +76,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Get options (with fallback to defaults)
     scan_interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+    timeout = entry.options.get(CONF_TIMEOUT, TIMEOUT)
+    enable_wifi = entry.options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS)
+    enable_ble = entry.options.get(CONF_ENABLE_BLE_SENSORS, DEFAULT_ENABLE_BLE_SENSORS)
+    enable_pv = entry.options.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS)
 
     _LOGGER.info("Setting up Marstek Venus E at %s:%s", host, port)
 
     # Create the API client
-    client = MarstekApiClient(host, port)
+    client = MarstekApiClient(host, port, timeout)
 
     try:
         # Connect to the device
@@ -94,14 +99,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         device_info = await client.get_device_info()
         _LOGGER.debug("Device info: %s", device_info)
 
-    except MarstekConnectionError as err:
-        # Device is not reachable
-        # Raise ConfigEntryNotReady to tell HA to retry later
+    except (MarstekConnectionError, asyncio.TimeoutError, TimeoutError) as err:
+        # Device is not reachable (offline, or its local API is toggled off).
+        # Raise ConfigEntryNotReady so HA retries setup with backoff instead of
+        # erroring out; the entry loads automatically once the device returns.
         await client.close()
-        raise ConfigEntryNotReady(f"Unable to connect to device: {err}") from err
+        raise ConfigEntryNotReady(f"Unable to reach device: {err}") from err
 
     # Create the data update coordinator with custom scan interval
-    coordinator = MarstekDataUpdateCoordinator(hass, client, device_info, scan_interval)
+    coordinator = MarstekDataUpdateCoordinator(
+        hass,
+        client,
+        device_info,
+        scan_interval,
+        enable_wifi=enable_wifi,
+        enable_ble=enable_ble,
+        enable_pv=enable_pv,
+    )
 
     # Fetch initial data
     # This ensures we have data before entities are created
@@ -126,6 +140,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     _LOGGER.info("Marstek Venus E setup complete")
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate an old config entry to the current version.
+
+    v1 -> v2: normalise the unique ID to the MAC format produced by
+    format_mac, so DHCP discovery (which only has the MAC) matches entries
+    that were originally created from the device's raw wifi_mac. Entity
+    unique IDs are left untouched, so no state history is lost.
+    """
+    if entry.version == 1:
+        new_unique_id = (
+            format_mac(entry.unique_id) if entry.unique_id else entry.unique_id
+        )
+        hass.config_entries.async_update_entry(
+            entry, unique_id=new_unique_id, version=2
+        )
+        _LOGGER.info(
+            "Migrated Marstek config entry to v2 (unique_id %s -> %s)",
+            entry.unique_id,
+            new_unique_id,
+        )
     return True
 
 
@@ -155,12 +192,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
-        # Close the API client connection
-        data = hass.data[DOMAIN][entry.entry_id]
-        client: MarstekApiClient = data["client"]
-        await client.close()
-
-        # Remove stored data
-        hass.data[DOMAIN].pop(entry.entry_id)
+        # Close the API client connection and remove stored data.
+        # Guard against a partially-initialised entry (setup that failed
+        # before storing its data).
+        data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if data:
+            client: MarstekApiClient = data["client"]
+            await client.close()
 
     return unload_ok

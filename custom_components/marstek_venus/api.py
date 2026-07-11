@@ -27,6 +27,66 @@ class MarstekApiError(Exception):
     """Exception raised when API returns an error."""
 
 
+async def discover_devices(
+    timeout: float = 3.0, port: int = 30000
+) -> list[Dict[str, Any]]:
+    """
+    Discover Marstek devices on the local network via UDP broadcast.
+
+    Broadcasts ``Marstek.GetDevice`` to 255.255.255.255 and collects replies
+    for ``timeout`` seconds.
+
+    Args:
+        timeout: How long to listen for replies after broadcasting
+        port: UDP port to broadcast to (default: 30000)
+
+    Returns:
+        A list of device info dicts (the GetDevice ``result``), each with an
+        added ``ip`` key for the source address the reply came from.
+        Deduplicated by wifi_mac.
+    """
+    loop = asyncio.get_running_loop()
+    responses: list[tuple[Dict[str, Any], str]] = []
+
+    class _DiscoveryProtocol(asyncio.DatagramProtocol):
+        def datagram_received(self, data: bytes, addr: tuple) -> None:
+            try:
+                message = json.loads(data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return
+            # Our own broadcast is echoed back on some networks; it carries no
+            # "result" key, so filtering on a dict result naturally skips it.
+            result = message.get("result")
+            if isinstance(result, dict):
+                responses.append((result, addr[0]))
+
+    transport, _ = await loop.create_datagram_endpoint(
+        _DiscoveryProtocol,
+        local_addr=("0.0.0.0", 0),
+        allow_broadcast=True,
+    )
+    try:
+        payload = json.dumps(
+            {"id": 0, "method": "Marstek.GetDevice", "params": {"ble_mac": "0"}}
+        ).encode()
+        # Send a few times; UDP broadcasts can be dropped.
+        for _ in range(3):
+            transport.sendto(payload, ("255.255.255.255", port))
+            await asyncio.sleep(0.3)
+        await asyncio.sleep(timeout)
+    finally:
+        transport.close()
+
+    # Deduplicate, preferring wifi_mac as the stable identity.
+    devices: Dict[str, Dict[str, Any]] = {}
+    for result, ip in responses:
+        device = dict(result)
+        device.setdefault("ip", ip)
+        key = device.get("wifi_mac") or device.get("ble_mac") or ip
+        devices[key] = device
+    return list(devices.values())
+
+
 class MarstekProtocol(asyncio.DatagramProtocol):
     """
     UDP Protocol handler for Marstek device communication.
@@ -142,16 +202,18 @@ class MarstekApiClient:
             await client.close()
     """
 
-    def __init__(self, host: str, port: int = 30000):
+    def __init__(self, host: str, port: int = 30000, timeout: float = TIMEOUT):
         """
         Initialize the API client.
 
         Args:
             host: IP address of the Marstek device
             port: UDP port number (default: 30000)
+            timeout: Default response timeout in seconds
         """
         self.host = host
         self.port = port
+        self.timeout = timeout
         self.protocol: Optional[MarstekProtocol] = None
         self._request_id = 0  # Counter for generating unique request IDs
         self._last_request_time = 0.0  # Track last request time for rate limiting
@@ -171,7 +233,7 @@ class MarstekApiClient:
         try:
             # Create a UDP endpoint
             # This returns (transport, protocol)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             _, self.protocol = await loop.create_datagram_endpoint(
                 MarstekProtocol, remote_addr=(self.host, self.port)
             )
@@ -303,7 +365,7 @@ class MarstekApiClient:
         request = {"id": request_id, "method": method, "params": params or {}}
 
         # Create a Future to wait for the response
-        future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self.protocol.pending_requests[request_id] = future
 
         try:
@@ -324,7 +386,7 @@ class MarstekApiClient:
         self,
         method: str,
         params: Optional[Dict[str, Any]] = None,
-        timeout: float = TIMEOUT,
+        timeout: Optional[float] = None,
         retries: int = MAX_RETRIES,
     ) -> Dict[str, Any]:
         """
@@ -352,6 +414,9 @@ class MarstekApiClient:
             MarstekApiError: If device returns an error
             asyncio.TimeoutError: If all retry attempts timeout
         """
+        if timeout is None:
+            timeout = self.timeout
+
         request_start = time.monotonic()
         last_error: Optional[Exception] = None
 

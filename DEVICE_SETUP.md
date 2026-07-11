@@ -92,7 +92,7 @@ This confirms the Open API is not currently enabled on the device.
 
 After you see the success message from `diagnose.py`:
 
-1. Run the full test: `python3 test_connection.py 192.168.1.195`
+1. Run the full test: `python3 test_device.py 192.168.1.195`
 2. Install the integration in Home Assistant
 3. Configure with your device's IP and port
 

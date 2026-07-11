@@ -4,11 +4,15 @@ A custom Home Assistant integration for the Marstek Venus home battery system, u
 
 ## Features
 
-- **Battery Monitoring**: Track battery state of charge and capacity
+- **Battery Monitoring**: Track battery state of charge, capacity, power, temperature, and charge/discharge state
 - **Power Flow Monitoring**: Monitor solar (PV), grid, and load power in real-time
 - **Energy Statistics**: Track cumulative energy from solar, grid import/export, and load consumption
+- **Mode Control**: Switch operating mode (Auto/AI/Manual/Passive) and schedule Manual mode via service calls
+- **Autodiscovery**: Devices are found automatically via UDP broadcast and DHCP; manual IP entry is always available
 - **Local Control**: Communicates directly with your device over your local network (no cloud required)
-- **Real-time Updates**: Data refreshes every 30 seconds
+- **Resilient**: Rides out short outages, marks entities unavailable during long ones, and recovers automatically; a "Last Seen" sensor tracks the last successful contact
+- **Configurable**: Poll interval, API timeout, and optional WiFi/Bluetooth/PV sensors
+- **Real-time Updates**: Data refreshes every 30 seconds (configurable)
 
 **Note**: This integration supports all Venus E component functionalities (Battery, ES, EM). Some sensors may show 0 values if optional features aren't connected (e.g., solar panels, load monitoring). Mode control may not be available on all Venus E 3 hardware revisions.
 
@@ -46,11 +50,15 @@ Before installation:
 
 3. **Add Integration**
    - Go to Settings > Devices & Services
-   - Click "+ Add Integration"
-   - Search for "Marstek Venus"
-   - Enter your device IP address (e.g., `192.168.1.100`)
+   - Your device may already appear under "Discovered" (via DHCP) - if so, click Configure
+   - Otherwise click "+ Add Integration" and search for "Marstek Venus"
+   - Pick your device from the discovered list, or choose "Enter IP address manually"
    - Optionally configure port (default: 30000) and device name
    - Click Submit
+
+   > Autodiscovery (broadcast and DHCP) requires Home Assistant on the same
+   > network segment as the device. In Docker that means `network_mode: host`;
+   > otherwise use manual IP entry.
 
 ### Manual Installation
 
@@ -67,12 +75,14 @@ Before installation:
 
 ## Entities
 
-### Sensors (9 total)
-
 **Battery Sensors:**
 
 - `Battery` - Battery state of charge (%)
-- `Battery Capacity` - Current battery capacity (Wh)
+- `Battery Capacity` - Current (remaining) battery capacity (Wh)
+- `Battery Total Capacity` - Total battery capacity (Wh)
+- `Battery Power` - Charge/discharge power (W, positive = charging)
+- `Battery Temperature` - Battery temperature (°C)
+- `Battery State` - Charging / Discharging / Idle
 
 **Power Flow Sensors:**
 
@@ -86,6 +96,20 @@ Before installation:
 - `Total Grid Import Energy` - Cumulative energy imported from grid (Wh)
 - `Total Grid Export Energy` - Cumulative energy exported to grid (Wh)
 - `Total Load Energy` - Cumulative load consumption (Wh) *
+
+**CT Meter** (separate device, if CT clamps connected):
+
+- `CT State`, `Phase A/B/C Power`, `Total CT Power` (W)
+
+**Diagnostic:**
+
+- `Connection` (binary, stays available during outages)
+- `Last Seen` - timestamp of the last successful contact
+- `Firmware Version`, `Device Model`, plus request/error/response-time counters (most disabled by default)
+
+**Optional** (disabled by default, enable in options):
+
+- `WiFi Signal`, `WiFi Network`, `Bluetooth State`, `Solar Voltage`, `Solar Current` (PV sensors are Venus D only)
 
 \* May show 0 if optional components are not connected
 
@@ -167,11 +191,13 @@ custom_components/marstek_venus/
 ├── __init__.py          # Integration setup
 ├── manifest.json        # Integration metadata
 ├── const.py            # Constants
-├── api.py              # UDP API client
-├── config_flow.py      # UI configuration flow
+├── api.py              # UDP API client + broadcast discovery
+├── config_flow.py      # Config flow (discovery + manual) and options
 ├── coordinator.py      # Data update coordinator
 ├── sensor.py           # Sensor entities
-├── select.py           # Mode selection entity
+├── select.py           # Mode selection entity + services
+├── binary_sensor.py    # Connection status
+├── services.yaml       # Service definitions
 ├── strings.json        # UI strings
 └── translations/
     └── en.json         # English translations
@@ -179,12 +205,9 @@ custom_components/marstek_venus/
 
 ## Future Enhancements
 
-- [ ] Manual mode scheduling support (time-based power control)
-- [ ] Configuration options for poll interval and timeout
-- [ ] WiFi network information sensors
-- [ ] Service calls for advanced control
-- [ ] Energy dashboard integration improvements
-- [ ] Diagnostic entities for debugging
+- [ ] Reconfigure flow to change IP/port without re-adding
+- [ ] Number/time entities for Passive and Manual mode power settings
+- [ ] Additional translations
 
 ## Contributing
 

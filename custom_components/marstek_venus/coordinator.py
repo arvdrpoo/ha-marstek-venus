@@ -11,14 +11,25 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
 )
+from homeassistant.util import dt as dt_util
 
 from .api import MarstekApiClient, MarstekApiError, MarstekConnectionError
-from .const import DEFAULT_SCAN_INTERVAL
+from .const import (
+    DEFAULT_ENABLE_BLE_SENSORS,
+    DEFAULT_ENABLE_PV_SENSORS,
+    DEFAULT_ENABLE_WIFI_SENSORS,
+    DEFAULT_SCAN_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 # Maximum consecutive failures before attempting reconnection
 MAX_CONSECUTIVE_FAILURES = 5
+
+# Maximum consecutive failures for which cached data is served before the
+# coordinator gives up and marks entities unavailable. Bounds how long stale
+# values can be presented as current during an outage.
+MAX_STALE_UPDATES = 5
 
 
 class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
@@ -41,6 +52,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         client: MarstekApiClient,
         device_info: Dict[str, Any],
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
+        enable_wifi: bool = DEFAULT_ENABLE_WIFI_SENSORS,
+        enable_ble: bool = DEFAULT_ENABLE_BLE_SENSORS,
+        enable_pv: bool = DEFAULT_ENABLE_PV_SENSORS,
     ) -> None:
         """
         Initialize the coordinator.
@@ -50,9 +64,15 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             client: The API client for device communication
             device_info: Basic device information from initial connection
             scan_interval: Update interval in seconds
+            enable_wifi: Fetch WiFi status each update cycle
+            enable_ble: Fetch Bluetooth status each update cycle
+            enable_pv: Fetch PV (solar) status each update cycle (Venus D only)
         """
         self.client = client
         self.device_info = device_info
+        self.enable_wifi = enable_wifi
+        self.enable_ble = enable_ble
+        self.enable_pv = enable_pv
 
         # Statistics tracking for diagnostics
         self._stats = {
@@ -67,6 +87,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         self._consecutive_failures = 0
         self._last_successful_data: Optional[Dict[str, Any]] = None
         self._last_es_error: Optional[str] = None
+
+        # Timestamp of the last update that fetched fresh data from the device
+        self.last_update_time = None
 
         # Initialize the parent DataUpdateCoordinator
         # The name appears in debug logs
@@ -104,10 +127,6 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             "last_es_error": self._last_es_error,
             "api_diagnostics": api_diagnostics,
         }
-
-    def update_scan_interval(self, seconds: int) -> None:
-        """Update the scan interval."""
-        self.update_interval = timedelta(seconds=seconds)
 
     async def _attempt_reconnect(self) -> bool:
         """
@@ -221,10 +240,20 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 time.monotonic() - start_time, 2
             )
 
-            # If we have cached data, return it with a warning
-            if self._last_successful_data is not None:
+            # If we have recent cached data, serve it briefly to ride out
+            # transient outages. Bound this so stale values are not presented
+            # as current indefinitely: once we exceed MAX_STALE_UPDATES
+            # consecutive failures, fail so entities become unavailable.
+            if (
+                self._last_successful_data is not None
+                and self._consecutive_failures <= MAX_STALE_UPDATES
+            ):
                 _LOGGER.warning(
-                    "Using cached data due to ES.GetStatus failure: %s", es_error
+                    "Using cached data due to ES.GetStatus failure "
+                    "(%d/%d): %s",
+                    self._consecutive_failures,
+                    MAX_STALE_UPDATES,
+                    es_error,
                 )
                 # Return cached data but mark it as stale
                 cached = self._last_successful_data.copy()
@@ -232,7 +261,8 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 cached["_error"] = str(es_error)
                 return cached
 
-            # No cached data available - must fail
+            # No cached data available, or the stale budget is exhausted:
+            # fail so entities are marked unavailable.
             error_msg = f"ES.GetStatus failed: {es_error}"
             if isinstance(es_error, asyncio.TimeoutError):
                 raise UpdateFailed(f"Timeout: {error_msg}") from es_error
@@ -290,18 +320,40 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.debug("Energy meter not available: %s", err)
 
-        # Skip optional API calls to reduce update time
-        # WiFi, Bluetooth, and PV status rarely change and take extra time
-        # These can be added back if needed, but would increase update cycle to 17+ seconds
+        # Optional API calls, each gated by a config option. These rarely
+        # change and add ~2.5s per call to the update cycle (rate limiting),
+        # so they are off by default. Enabling all three can push the cycle
+        # past short scan intervals.
         wifi_data = None
+        if self.enable_wifi:
+            try:
+                _LOGGER.debug("Fetching WiFi status")
+                wifi_data = await self.client.get_wifi_status()
+            except Exception as err:
+                _LOGGER.debug("WiFi status not available: %s", err)
+
         ble_data = None
+        if self.enable_ble:
+            try:
+                _LOGGER.debug("Fetching Bluetooth status")
+                ble_data = await self.client.get_ble_status()
+            except Exception as err:
+                _LOGGER.debug("Bluetooth status not available: %s", err)
+
         pv_data = None
+        if self.enable_pv:
+            try:
+                _LOGGER.debug("Fetching PV status")
+                pv_data = await self.client.get_pv_status()
+            except Exception as err:
+                _LOGGER.debug("PV status not available: %s", err)
 
         # Track success
         duration = time.monotonic() - start_time
         self._stats["total_response_time"] += duration
         self._stats["last_update_success"] = True
         self._stats["last_update_duration"] = round(duration, 2)
+        self.last_update_time = dt_util.utcnow()
 
         # Build result data
         result = {

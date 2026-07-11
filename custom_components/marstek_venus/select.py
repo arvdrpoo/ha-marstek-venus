@@ -1,11 +1,11 @@
 """Select platform for Marstek Venus E."""
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -108,12 +108,14 @@ async def async_setup_entry(
         "test_connection",
         {},
         "async_test_connection",
+        supports_response=SupportsResponse.OPTIONAL,
     )
 
     platform.async_register_entity_service(
         "get_mode_details",
         {},
         "async_get_mode_details",
+        supports_response=SupportsResponse.OPTIONAL,
     )
 
 
@@ -159,7 +161,7 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         # Set entity name
         self._attr_name = "Operating Mode"
 
-        # Set available options (excluding Manual for v1)
+        # Set available options
         self._attr_options = MODES
 
         # Link to device
@@ -175,21 +177,22 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         self._attr_icon = "mdi:battery-sync"
 
     @property
-    def current_option(self) -> str:
+    def current_option(self) -> Optional[str]:
         """
         Return the currently selected mode.
 
         Returns:
-            The current mode string, or Auto if unknown
+            The current mode string, or None if unknown (shown as unknown in
+            the UI rather than misreporting a concrete mode).
         """
         if self.coordinator.data is None:
-            return MODE_AUTO
+            return None
 
         mode = self.coordinator.data.get("mode", {}).get("mode")
 
-        # If mode is not in our list (e.g., Manual), default to Auto
+        # If mode is not one of our options, report unknown
         if mode not in MODES:
-            return MODE_AUTO
+            return None
 
         return mode
 

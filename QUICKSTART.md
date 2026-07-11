@@ -17,7 +17,7 @@ Get up and running in 2 minutes!
 # curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Test the connection (replace IP with your device's IP)
-uv run test_connection.py 192.168.1.100
+uv run test_device.py 192.168.1.100
 ```
 
 ### Using Python directly
@@ -28,7 +28,7 @@ python3 -m venv venv
 source venv/bin/activate  # On macOS/Linux
 
 # Run test
-python test_connection.py 192.168.1.100
+python test_device.py 192.168.1.100
 
 # Deactivate when done
 deactivate
@@ -84,14 +84,21 @@ cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
 1. Go to **Settings** > **Devices & Services**
 2. Click **+ Add Integration** (bottom right)
 3. Search for **"Marstek Venus E"**
-4. Enter your device IP address (e.g., `192.168.1.100`)
+4. Pick your device from the discovered list, or choose "Enter IP address
+   manually" and type it in (e.g., `192.168.1.100`)
 5. Click **Submit**
+
+> Devices on your network are found automatically by UDP broadcast, and Home
+> Assistant may also surface the device on its own via DHCP. Autodiscovery
+> needs Home Assistant to be on the same network segment; in Docker that means
+> `network_mode: host`. Manual IP entry always works.
 
 ## Step 4: Done! 🎉
 
 You should now see:
-- 1 device: "Marstek VenusE" (or similar)
-- 11 sensors: Battery, power flows, energy totals
+- 1 device: "Marstek VenusE" (or similar), plus a separate "CT Meter" device
+- ~24 entities: battery, power flows, energy totals, CT phases, mode,
+  and diagnostics (Connection, Last Seen, ...)
 - 1 control: Operating mode selector
 
 ### View Your Data
@@ -104,7 +111,8 @@ You should now see:
 Use the "Operating Mode" selector to switch between:
 - **Auto** - Automatic operation
 - **AI** - AI-based optimization
-- **Passive** - Manual control (0W standby)
+- **Manual** - Time-based power schedules (configure via services)
+- **Passive** - Direct power control with a countdown
 
 ## Troubleshooting
 
@@ -116,7 +124,7 @@ Use the "Operating Mode" selector to switch between:
 
 ### "Cannot connect to device"
 
-- Run the test script again: `uv run test_connection.py YOUR_IP`
+- Run the test script again: `uv run test_device.py YOUR_IP`
 - Check device is powered on and on network
 - Verify Open API is still enabled in Marstek app
 

@@ -4,16 +4,18 @@
 
 ### Complete Home Assistant Integration
 All integration files are ready in `custom_components/marstek_venus/`:
-- **10 Python files** implementing sensors, controls, and API communication
-- **11 sensor entities**: Battery, power flows, energy totals
-- **1 select entity**: Operating mode control (Auto/AI/Passive)
-- Full config flow with UI-based setup
-- Comprehensive error handling and logging
+- Python modules implementing sensors, controls, and API communication
+- **~24 entities**: battery, power flows, energy totals, CT phases, mode,
+  and diagnostics (Connection, Last Seen); optional WiFi/BLE/PV sensors
+- **1 select entity**: Operating mode control (Auto/AI/Manual/Passive)
+- Config flow with UDP-broadcast device discovery, DHCP discovery, and manual entry
+- Resilient to connection loss: rides out short outages, marks entities
+  unavailable during long ones, and recovers automatically
 
 ### Standalone Testing Tools
 No Home Assistant or virtual environment needed:
-- **`marstek_api.py`**: Standalone API client (418 lines, pure Python)
-- **`test_connection.py`**: Full device test (shows all sensors/data)
+- **`custom_components/marstek_venus/api.py`**: Standalone API client (418 lines, pure Python)
+- **`test_device.py`**: Full device test (shows all sensors/data)
 - **`diagnose.py`**: Low-level UDP diagnostic tool
 
 ### Complete Documentation
@@ -23,65 +25,52 @@ No Home Assistant or virtual environment needed:
 - **DEVICE_SETUP.md**: How to enable API on your device
 - **CLAUDE.md**: Architecture and development guide
 
-## 🔧 Current Test Results
+## 🔧 Test Results
 
-**Device**: `192.168.1.195:30000`
+Validated end-to-end against a **Marstek VenusE 3.0** (firmware 148):
 
-✅ **Network**: Reachable (ping works, latency 94-176ms)  
-❌ **API**: Not responding (Open API not enabled)
+✅ **Network**: Reachable
+✅ **API**: Responds to `Marstek.GetDevice`, `ES.GetStatus`, `Bat.GetStatus`,
+   `EM.GetStatus`, `ES.GetMode`
+✅ **Discovery**: Device found via UDP broadcast
+✅ **Home Assistant**: Config entry loads with ~24 live entities
 
-### Error Details
-```
-Connection refused on UDP port 30000
-```
+> Note: the Marstek app can toggle the Local API back off on its own. If the
+> device stops responding, re-check the Local API setting in the app. The
+> integration tolerates this and recovers when the API returns.
 
-This means the Open API feature is not enabled on your Marstek Venus E device.
+## 📋 Prerequisite: Enable the Local API
 
-## 📋 What You Need to Do
-
-### Step 1: Enable the API on Your Device
+If the device does not respond, enable its Local (Open) API:
 
 1. Open the **Marstek mobile app**
 2. Go to your **Venus E device settings**
 3. Find and **enable "Open API"** or "Local API"
 4. Note the **UDP port number** (usually 30000)
 
-See **`DEVICE_SETUP.md`** for detailed instructions with screenshots.
+See **`DEVICE_SETUP.md`** for detailed instructions.
 
-### Step 2: Test Again
-
-```bash
-# Run diagnostic to verify API is enabled
-python3 diagnose.py 192.168.1.195
-
-# Should show: ✅ SUCCESS! Device responded!
-```
-
-### Step 3: Run Full Test
+### Verify and install
 
 ```bash
-# Test all sensors and data
-python3 test_connection.py 192.168.1.195
+# Verify the API is up
+python3 diagnose.py 192.168.1.194
 
-# Should show all battery, power, and energy data
+# Full device test (battery, power, energy, CT)
+python3 test_device.py 192.168.1.194
 ```
 
-### Step 4: Install in Home Assistant
-
-```bash
-# Copy integration to HA
-cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
-
-# Restart HA and add integration
-# Settings > Devices & Services > Add Integration > "Marstek Venus E"
-```
+For HACS: add this repository as a custom integration, install, restart Home
+Assistant, then add it from Settings > Devices & Services (it may already be
+discovered). For a manual install, copy `custom_components/marstek_venus` into
+your HA `custom_components/` directory and restart.
 
 ## 📁 Key Files
 
 | File | Purpose |
 |------|---------|
-| `marstek_api.py` | Standalone API client (no HA deps) |
-| `test_connection.py` | Quick device test |
+| `custom_components/marstek_venus/api.py` | Standalone API client (no HA deps) |
+| `test_device.py` | Quick device test |
 | `diagnose.py` | Detailed UDP diagnostics |
 | `DEVICE_SETUP.md` | How to enable API on device |
 | `QUICKSTART.md` | Fast setup guide |
@@ -90,16 +79,14 @@ cp -r custom_components/marstek_venus ~/.homeassistant/custom_components/
 ## 🎯 Testing Summary
 
 ### What Works
-- ✅ Network connectivity
-- ✅ UDP socket creation
-- ✅ JSON request formatting
-- ✅ Protocol implementation
-- ✅ Integration code structure
+- ✅ UDP broadcast discovery
+- ✅ Live data via ES/Bat/EM/GetMode
+- ✅ Home Assistant config entry + entities
+- ✅ Resilient reconnect and Last Seen tracking
+- ✅ Operating mode control
 
-### What's Needed
-- ❌ Enable Open API on device (user action required)
-- ❌ Verify port number in app
-- ❌ Run tests after enabling
+### Requires user action
+- ⚠️ Local API must be enabled in the Marstek app (and can be toggled off by it)
 
 ## 🚀 Once API is Enabled
 
@@ -128,7 +115,7 @@ ping 192.168.1.195
 python3 diagnose.py 192.168.1.195
 
 # Full device test (after API enabled)
-python3 test_connection.py 192.168.1.195
+python3 test_device.py 192.168.1.195
 
 # Test with different port
 python3 diagnose.py 192.168.1.195 50000
@@ -136,8 +123,8 @@ python3 diagnose.py 192.168.1.195 50000
 
 ---
 
-**Status**: Ready for deployment, waiting for device API to be enabled.
+**Status**: Deployed and working; validated end-to-end in Home Assistant.
 
-**Last tested**: Device at 192.168.1.195 - API not responding (not enabled)
+**Last tested**: Marstek VenusE 3.0 (fw 148) - config entry loaded with live data.
 
-See `DEVICE_SETUP.md` for next steps.
+See `DEVICE_SETUP.md` if the device's Local API needs enabling.
