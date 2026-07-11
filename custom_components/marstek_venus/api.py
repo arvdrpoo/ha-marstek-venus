@@ -19,6 +19,29 @@ RETRY_BASE_DELAY = 1.0  # Base delay in seconds for exponential backoff
 _LOGGER = logging.getLogger(__name__)
 
 
+def charge_discharge_to_wire_power(charge_w: int, discharge_w: int) -> int:
+    """Map HA charge/discharge setpoints to the device's signed power value.
+
+    On the HA side both values are non-negative: ``charge_w`` draws power into
+    the battery, ``discharge_w`` pushes power out. At most one is expected to be
+    non-zero; if both are set, charge wins.
+
+    Wire convention (charge = negative, discharge = positive) is shared by both
+    Manual (manual_cfg.power) and Passive (passive_cfg.power). This is INVERTED
+    relative to ``bat_power`` in ES.GetStatus (where positive = charging), which
+    is why the HA-facing entities use charge = positive and this function does
+    the single inversion.
+
+    Verified on VenusE 3.0 firmware 148 (2026-07-12): commanding a positive
+    value exported to grid (discharge); a negative value imported (charge).
+    """
+    if charge_w > 0:
+        return -int(charge_w)
+    if discharge_w > 0:
+        return int(discharge_w)
+    return 0
+
+
 class MarstekConnectionError(Exception):
     """Exception raised when connection to device fails."""
 
@@ -217,6 +240,11 @@ class MarstekApiClient:
         self.protocol: Optional[MarstekProtocol] = None
         self._request_id = 0  # Counter for generating unique request IDs
         self._last_request_time = 0.0  # Track last request time for rate limiting
+        # Serialize device I/O. The device needs >=2s between requests and does
+        # not handle concurrent in-flight requests, so a poll and a control
+        # command (e.g. a Number setpoint) must not overlap. Held across the
+        # whole send+response so only one request is on the wire at a time.
+        self._request_lock = asyncio.Lock()
 
         # Diagnostic tracking
         self._request_stats: Dict[str, Dict[str, Any]] = {}
@@ -345,42 +373,46 @@ class MarstekApiClient:
         if not self.protocol or not self.protocol.transport:
             raise MarstekConnectionError("Not connected to device")
 
-        # Rate limiting: Venus E 3 requires 2+ seconds between requests
-        current_time = time.monotonic()
-        elapsed = current_time - self._last_request_time
-        if elapsed < MIN_REQUEST_INTERVAL:
-            sleep_time = MIN_REQUEST_INTERVAL - elapsed
-            _LOGGER.debug(
-                "Rate limiting: sleeping %.2fs before next request", sleep_time
-            )
-            await asyncio.sleep(sleep_time)
+        # Serialize the whole exchange so concurrent callers (a poll and a
+        # control command) cannot interleave rate-limit bookkeeping or overlap
+        # in-flight requests on the single-request-at-a-time device.
+        async with self._request_lock:
+            # Rate limiting: Venus E 3 requires 2+ seconds between requests
+            current_time = time.monotonic()
+            elapsed = current_time - self._last_request_time
+            if elapsed < MIN_REQUEST_INTERVAL:
+                sleep_time = MIN_REQUEST_INTERVAL - elapsed
+                _LOGGER.debug(
+                    "Rate limiting: sleeping %.2fs before next request", sleep_time
+                )
+                await asyncio.sleep(sleep_time)
 
-        # Update last request time
-        self._last_request_time = time.monotonic()
+            # Update last request time
+            self._last_request_time = time.monotonic()
 
-        # Generate unique request ID
-        request_id = self._get_next_id()
+            # Generate unique request ID
+            request_id = self._get_next_id()
 
-        # Build the JSON-RPC request
-        request = {"id": request_id, "method": method, "params": params or {}}
+            # Build the JSON-RPC request
+            request = {"id": request_id, "method": method, "params": params or {}}
 
-        # Create a Future to wait for the response
-        future = asyncio.get_running_loop().create_future()
-        self.protocol.pending_requests[request_id] = future
+            # Create a Future to wait for the response
+            future = asyncio.get_running_loop().create_future()
+            self.protocol.pending_requests[request_id] = future
 
-        try:
-            # Send the request
-            data = json.dumps(request).encode()
-            self.protocol.transport.sendto(data)
-            _LOGGER.debug("Sent request: %s", request)
+            try:
+                # Send the request
+                data = json.dumps(request).encode()
+                self.protocol.transport.sendto(data)
+                _LOGGER.debug("Sent request: %s", request)
 
-            # Wait for response with timeout
-            result = await asyncio.wait_for(future, timeout=timeout)
-            return result
+                # Wait for response with timeout
+                result = await asyncio.wait_for(future, timeout=timeout)
+                return result
 
-        finally:
-            # Always clean up pending request
-            self.protocol.pending_requests.pop(request_id, None)
+            finally:
+                # Always clean up pending request
+                self.protocol.pending_requests.pop(request_id, None)
 
     async def send_command(
         self,
@@ -721,3 +753,33 @@ class MarstekApiClient:
         result = await self.send_command("ES.SetMode", params)
         # Result should contain set_result: true/false
         return result.get("set_result", False)
+
+    async def set_manual_power(self, charge_w: int, discharge_w: int) -> bool:
+        """Set continuous Manual-mode power from HA charge/discharge setpoints.
+
+        Uses time slot 0 with an all-day, all-week window, matching how the
+        Marstek app drives continuous manual power. Unlike Passive, this holds
+        until changed (no countdown), so it survives restarts and needs no
+        re-assert. Slot 0 is therefore reserved for this control.
+
+        Args:
+            charge_w: Charge power in watts (>= 0)
+            discharge_w: Discharge power in watts (>= 0)
+
+        Returns:
+            True if the device accepted the command.
+        """
+        power = charge_discharge_to_wire_power(charge_w, discharge_w)
+        return await self.set_mode(
+            "Manual",
+            {
+                "manual_cfg": {
+                    "time_num": 0,
+                    "start_time": "00:00",
+                    "end_time": "23:59",
+                    "week_set": 127,
+                    "power": power,
+                    "enable": 1,
+                }
+            },
+        )

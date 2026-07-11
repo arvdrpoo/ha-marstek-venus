@@ -36,5 +36,15 @@ MODE_PASSIVE = "Passive"
 # All supported modes for select entity
 MODES = [MODE_AUTO, MODE_AI, MODE_MANUAL, MODE_PASSIVE]
 
+# Passive-mode power control (charge/discharge setpoints)
+# Upper bound for the charge/discharge Number entities, in watts. 2500 W is the
+# Venus E continuous rating; bump if a larger unit is used. Manual/Passive on the
+# wire is validated to +/-5000 W (see select.py), so this only caps the slider.
+MAX_PASSIVE_POWER = 2500  # W
+PASSIVE_POWER_STEP = 50   # W
+
+# Repair issue key for a device that has stopped responding.
+ISSUE_DEVICE_UNREACHABLE = "device_unreachable"
+
 # Platforms
-PLATFORMS = ["sensor", "select", "binary_sensor"]
+PLATFORMS = ["sensor", "select", "binary_sensor", "number"]

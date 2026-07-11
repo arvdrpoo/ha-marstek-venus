@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any, Dict, Optional
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     UpdateFailed,
@@ -19,6 +20,8 @@ from .const import (
     DEFAULT_ENABLE_PV_SENSORS,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    ISSUE_DEVICE_UNREACHABLE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -51,6 +54,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         client: MarstekApiClient,
         device_info: Dict[str, Any],
+        entry_id: str,
         scan_interval: int = DEFAULT_SCAN_INTERVAL,
         enable_wifi: bool = DEFAULT_ENABLE_WIFI_SENSORS,
         enable_ble: bool = DEFAULT_ENABLE_BLE_SENSORS,
@@ -63,6 +67,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             hass: Home Assistant instance
             client: The API client for device communication
             device_info: Basic device information from initial connection
+            entry_id: Config entry ID (used to scope the repair issue)
             scan_interval: Update interval in seconds
             enable_wifi: Fetch WiFi status each update cycle
             enable_ble: Fetch Bluetooth status each update cycle
@@ -70,9 +75,18 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         """
         self.client = client
         self.device_info = device_info
+        self._entry_id = entry_id
         self.enable_wifi = enable_wifi
         self.enable_ble = enable_ble
         self.enable_pv = enable_pv
+
+        # Manual-mode power control state. The Charge/Discharge Number entities
+        # drive Manual time slot 0, which the device holds until changed (no
+        # countdown), so no re-assert is needed. These are the HA-desired
+        # setpoints; the device does not report a commanded power back, so they
+        # are also what the Number entities display.
+        self.manual_charge_power = 0
+        self.manual_discharge_power = 0
 
         # Statistics tracking for diagnostics
         self._stats = {
@@ -149,6 +163,45 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error("Reconnection failed: %s", err)
             return False
+
+    async def async_apply_manual(self, charge: int, discharge: int) -> None:
+        """Set the Manual-mode power to the given charge/discharge setpoint.
+
+        Exactly one of the two is kept (charge wins if both are set). Manual
+        mode holds until changed, so this is a one-shot command with no
+        re-assert. Stores the desired setpoint for the Number entities and
+        pushes it to the device.
+        """
+        charge = max(0, int(charge))
+        discharge = max(0, int(discharge))
+        if charge and discharge:
+            discharge = 0
+
+        self.manual_charge_power = charge
+        self.manual_discharge_power = discharge
+        # Reflect the new setpoint in the Number entities right away.
+        self.async_update_listeners()
+
+        try:
+            ok = await self.client.set_manual_power(charge, discharge)
+            if not ok:
+                _LOGGER.error("Device rejected manual setpoint %s/%s W", charge, discharge)
+        except (MarstekApiError, MarstekConnectionError, asyncio.TimeoutError, TimeoutError) as err:
+            _LOGGER.warning("Failed to apply manual setpoint: %s", err)
+
+        await self.async_request_refresh()
+
+    def clear_manual_control(self) -> None:
+        """Reset the displayed setpoints when another mode takes over.
+
+        The mode switch itself is issued by the caller (e.g. the select). This
+        only zeroes the Number entities so they stop showing a stale setpoint.
+        """
+        if not (self.manual_charge_power or self.manual_discharge_power):
+            return
+        self.manual_charge_power = 0
+        self.manual_discharge_power = 0
+        self.async_update_listeners()
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """
@@ -262,7 +315,19 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 return cached
 
             # No cached data available, or the stale budget is exhausted:
-            # fail so entities are marked unavailable.
+            # fail so entities are marked unavailable, and surface a repair
+            # issue so the outage is actionable in the UI (common cause: the
+            # device's local API got toggled off, or it fell off the network).
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"{ISSUE_DEVICE_UNREACHABLE}_{self._entry_id}",
+                is_fixable=True,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key=ISSUE_DEVICE_UNREACHABLE,
+                data={"entry_id": self._entry_id},
+            )
+
             error_msg = f"ES.GetStatus failed: {es_error}"
             if isinstance(es_error, asyncio.TimeoutError):
                 raise UpdateFailed(f"Timeout: {error_msg}") from es_error
@@ -347,6 +412,11 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 pv_data = await self.client.get_pv_status()
             except Exception as err:
                 _LOGGER.debug("PV status not available: %s", err)
+
+        # Fresh data reached us: clear any outstanding unreachable repair issue.
+        ir.async_delete_issue(
+            self.hass, DOMAIN, f"{ISSUE_DEVICE_UNREACHABLE}_{self._entry_id}"
+        )
 
         # Track success
         duration = time.monotonic() - start_time

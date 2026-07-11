@@ -21,6 +21,14 @@
       "discovery_confirm": {
         "title": "Marstek Venus discovered",
         "description": "Do you want to set up the Marstek Venus device at {host}?"
+      },
+      "reconfigure": {
+        "title": "Reconfigure Marstek Venus",
+        "description": "Update the device's IP address or UDP port. The device must be reachable to save.",
+        "data": {
+          "host": "Device IP Address",
+          "port": "UDP Port"
+        }
       }
     },
     "error": {
@@ -30,7 +38,9 @@
     },
     "abort": {
       "already_configured": "This device is already configured.",
-      "already_in_progress": "Configuration of this device is already in progress."
+      "already_in_progress": "Configuration of this device is already in progress.",
+      "reconfigure_successful": "Device settings updated.",
+      "wrong_device": "That IP belongs to a different Marstek device than the one being reconfigured."
     }
   },
   "options": {
@@ -50,6 +60,19 @@
     "error": {
       "invalid_scan_interval": "Scan interval must be between 15 and 300 seconds",
       "invalid_timeout": "Timeout must be between 5 and 30 seconds"
+    }
+  },
+  "issues": {
+    "device_unreachable": {
+      "title": "Marstek Venus is not responding",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Reconnect to the Marstek Venus",
+            "description": "Home Assistant stopped receiving data from the device. Check that it is powered on, connected to the network, and that its local API is still enabled in the Marstek app. Then submit to retry the connection."
+          }
+        }
+      }
     }
   }
 }

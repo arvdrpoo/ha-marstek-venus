@@ -30,7 +30,12 @@ from .coordinator import MarstekDataUpdateCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 # List of platforms this integration provides
-PLATFORMS = [Platform.SENSOR, Platform.SELECT, Platform.BINARY_SENSOR]
+PLATFORMS = [
+    Platform.SENSOR,
+    Platform.SELECT,
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -111,6 +116,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         client,
         device_info,
+        entry.entry_id,
         scan_interval,
         enable_wifi=enable_wifi,
         enable_ble=enable_ble,

@@ -8,9 +8,11 @@ A custom Home Assistant integration for the Marstek Venus home battery system, u
 - **Power Flow Monitoring**: Monitor solar (PV), grid, and load power in real-time
 - **Energy Statistics**: Track cumulative energy from solar, grid import/export, and load consumption
 - **Mode Control**: Switch operating mode (Auto/AI/Manual/Passive) and schedule Manual mode via service calls
+- **Battery Power Control**: Set charge or discharge power directly with `Charge Power` / `Discharge Power` controls, ideal for price-based automations
 - **Autodiscovery**: Devices are found automatically via UDP broadcast and DHCP; manual IP entry is always available
 - **Local Control**: Communicates directly with your device over your local network (no cloud required)
 - **Resilient**: Rides out short outages, marks entities unavailable during long ones, and recovers automatically; a "Last Seen" sensor tracks the last successful contact
+- **Maintainable**: Downloadable diagnostics, a repair prompt when the device is unreachable, and IP/port reconfigure without re-adding the device
 - **Configurable**: Poll interval, API timeout, and optional WiFi/Bluetooth/PV sensors
 - **Real-time Updates**: Data refreshes every 30 seconds (configurable)
 
@@ -122,6 +124,13 @@ Before installation:
   - **AI**: AI-based optimization mode
   - **Manual**: Manual power control mode with scheduling
   - **Passive**: Direct power control mode (defaults to 0W standby)
+
+**Number Entities:**
+
+- `Charge Power` / `Discharge Power` (0-2500 W) - Set continuous charge or
+  discharge power. They are mutually exclusive (setting one zeroes the other);
+  both zero holds at idle. These drive Manual mode, so the setpoint holds until
+  changed. Charge is positive, matching the `Battery Power` sensor.
 
 \*\* Mode control may not be supported on all Venus E 3 hardware revisions. If unavailable, the mode will show as "Unknown".
 

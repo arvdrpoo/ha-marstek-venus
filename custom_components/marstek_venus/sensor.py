@@ -128,9 +128,11 @@ async def async_setup_entry(
     if entry.options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS):
         entities.append(WifiSignalSensor(coordinator, entry, device_info, main_device_info))
         entities.append(WifiSsidSensor(coordinator, entry, device_info, main_device_info))
+        entities.append(WifiIpAddressSensor(coordinator, entry, device_info, main_device_info))
 
     if entry.options.get(CONF_ENABLE_BLE_SENSORS, DEFAULT_ENABLE_BLE_SENSORS):
         entities.append(BluetoothStateSensor(coordinator, entry, device_info, main_device_info))
+        entities.append(BluetoothMacSensor(coordinator, entry, device_info, main_device_info))
 
     # PV voltage/current come from PV.GetStatus (Venus D only)
     if entry.options.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS):
@@ -929,6 +931,29 @@ class WifiSsidSensor(MarstekSensorBase):
         return self._get_value("wifi", "ssid")
 
 
+class WifiIpAddressSensor(MarstekSensorBase):
+    """Device IP address (from Wifi.GetStatus)."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info_dict, "wifi_ip_address", "IP Address", device_info)
+        self._attr_icon = "mdi:ip-network"
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        return self._get_value("wifi", "sta_ip")
+
+
 # ============================================================================
 # Bluetooth Sensors
 # ============================================================================
@@ -951,6 +976,29 @@ class BluetoothStateSensor(MarstekSensorBase):
     def native_value(self) -> Optional[str]:
         """Return the state of the sensor."""
         return self._get_value("ble", "state")
+
+
+class BluetoothMacSensor(MarstekSensorBase):
+    """Bluetooth MAC address (from BLE.GetStatus)."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: MarstekDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info_dict: Dict[str, Any],
+        device_info: DeviceInfo,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, entry, device_info_dict, "bluetooth_mac", "Bluetooth MAC", device_info)
+        self._attr_icon = "mdi:bluetooth"
+        self._attr_entity_registry_enabled_default = False
+
+    @property
+    def native_value(self) -> Optional[str]:
+        """Return the state of the sensor."""
+        return self._get_value("ble", "ble_mac")
 
 
 # ============================================================================

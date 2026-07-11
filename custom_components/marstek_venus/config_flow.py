@@ -287,6 +287,49 @@ class MarstekConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ) -> FlowResult:
+        """Let the user change the device IP/port without re-adding it.
+
+        Keeps the existing entry (and entity history) and guards against
+        pointing it at a different physical device.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: Dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            port = user_input[CONF_PORT]
+            try:
+                device_info = await validate_connection(self.hass, host, port)
+            except asyncio.TimeoutError:
+                errors["base"] = "timeout"
+            except (MarstekConnectionError, MarstekApiError):
+                errors["base"] = "cannot_connect"
+            else:
+                wifi_mac = device_info.get("wifi_mac", "")
+                if wifi_mac:
+                    await self.async_set_unique_id(format_mac(wifi_mac))
+                    self._abort_if_unique_id_mismatch(reason="wrong_device")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_HOST: host, CONF_PORT: port},
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(
+                    CONF_HOST, default=entry.data.get(CONF_HOST)
+                ): str,
+                vol.Optional(
+                    CONF_PORT, default=entry.data.get(CONF_PORT, DEFAULT_PORT)
+                ): cv.port,
+            }),
+            errors=errors,
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(

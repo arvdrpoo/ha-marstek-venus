@@ -209,6 +209,16 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         """
         _LOGGER.info("Changing operating mode to: %s", option)
 
+        # Manual power is driven by the coordinator (Charge/Discharge Power
+        # numbers). Delegate so selecting Manual applies whatever setpoint is
+        # currently held (0 W = idle manual).
+        if option == MODE_MANUAL:
+            await self.coordinator.async_apply_manual(
+                charge=self.coordinator.manual_charge_power,
+                discharge=self.coordinator.manual_discharge_power,
+            )
+            return
+
         try:
             # Build the mode configuration based on selected option
             if option == MODE_AUTO:
@@ -217,23 +227,11 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
             elif option == MODE_AI:
                 config = {"ai_cfg": {"enable": 1}}
 
-            elif option == MODE_MANUAL:
-                # Manual mode with complete default configuration
-                # Sets to 0W power, all week, 00:00-23:59 (effectively standby)
-                config = {
-                    "manual_cfg": {
-                        "time_num": 0,
-                        "start_time": "00:00",
-                        "end_time": "23:59",
-                        "week_set": 127,  # All days (binary: 1111111)
-                        "power": 0,
-                        "enable": 1
-                    }
-                }
-
             elif option == MODE_PASSIVE:
-                # Passive mode requires power and countdown parameters
-                # Use defaults: 0W (standby) with 300 second countdown
+                # Passive is countdown-based; the Charge/Discharge numbers use
+                # Manual instead. Selecting Passive here is a raw one-shot at
+                # 0 W that reverts when cd_time elapses. Use the
+                # set_mode_passive service for a specific passive power.
                 config = {"passive_cfg": {"power": 0, "cd_time": 300}}
 
             else:
@@ -246,6 +244,9 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
             if not success:
                 _LOGGER.error("Failed to set mode to %s", option)
                 return
+
+            # Left Manual for another mode: reset the displayed setpoints.
+            self.coordinator.clear_manual_control()
 
             # Refresh coordinator data to reflect the change
             await self.coordinator.async_request_refresh()
@@ -369,6 +370,11 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
             if not success:
                 _LOGGER.error("Failed to set mode to %s", mode)
                 return
+
+            # Switched to a non-Manual mode via a service: reset the displayed
+            # Charge/Discharge setpoints. The Manual service sets its own slots.
+            if mode != MODE_MANUAL:
+                self.coordinator.clear_manual_control()
 
             # Refresh coordinator data
             await self.coordinator.async_request_refresh()
