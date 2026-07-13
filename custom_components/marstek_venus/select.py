@@ -14,7 +14,15 @@ import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 
 from .api import MarstekApiClient, MarstekApiError
-from .const import DOMAIN, MODE_AI, MODE_AUTO, MODE_MANUAL, MODE_PASSIVE, MODES
+from .const import (
+    DOMAIN,
+    MODE_AI,
+    MODE_AUTO,
+    MODE_MANUAL,
+    MODE_PASSIVE,
+    MODES,
+    normalize_mode,
+)
 from .coordinator import MarstekDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -188,13 +196,9 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         if self.coordinator.data is None:
             return None
 
-        mode = self.coordinator.data.get("mode", {}).get("mode")
-
-        # If mode is not one of our options, report unknown
-        if mode not in MODES:
-            return None
-
-        return mode
+        # Normalize the raw device value; None (shown as unknown in the UI)
+        # for anything unrecognised rather than misreporting a concrete mode.
+        return normalize_mode(self.coordinator.data.get("mode", {}).get("mode"))
 
     async def async_select_option(self, option: str) -> None:
         """

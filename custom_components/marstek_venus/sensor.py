@@ -28,6 +28,7 @@ from .const import (
     DEFAULT_ENABLE_PV_SENSORS,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DOMAIN,
+    normalize_mode,
 )
 from .coordinator import MarstekDataUpdateCoordinator
 
@@ -747,11 +748,8 @@ class OperatingModeSensor(MarstekSensorBase):
     @property
     def native_value(self) -> Optional[str]:
         """Return the state of the sensor."""
-        mode = self._get_value("mode", "mode")
-        # Ensure the value is one of the valid options
-        if mode in self._attr_options:
-            return mode
-        return "Unknown"
+        mode = normalize_mode(self._get_value("mode", "mode"))
+        return mode if mode is not None else "Unknown"
 
 
 # ============================================================================

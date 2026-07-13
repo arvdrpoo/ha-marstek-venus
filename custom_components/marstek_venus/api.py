@@ -289,10 +289,16 @@ class MarstekApiClient:
         """
         Generate a unique request ID.
 
+        The device appears to treat request IDs as 16-bit values, so the
+        counter wraps at 0xFFFF to keep request/response matching stable on
+        long-running polls. 0 is skipped because the device uses it for
+        unsolicited status messages (see MarstekProtocol.datagram_received),
+        so IDs cycle through 1..0xFFFF.
+
         Returns:
-            A unique integer ID
+            A unique integer ID in the range 1..0xFFFF
         """
-        self._request_id += 1
+        self._request_id = (self._request_id % 0xFFFF) + 1
         return self._request_id
 
     def _update_stats(

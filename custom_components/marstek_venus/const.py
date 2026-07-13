@@ -1,5 +1,7 @@
 """Constants for the Marstek Venus E integration."""
 
+from typing import Any, Optional
+
 # Integration domain
 DOMAIN = "marstek_venus"
 
@@ -35,6 +37,24 @@ MODE_PASSIVE = "Passive"
 
 # All supported modes for select entity
 MODES = [MODE_AUTO, MODE_AI, MODE_MANUAL, MODE_PASSIVE]
+
+# Lookup for normalizing raw ES.GetMode values to the canonical mode strings.
+_MODE_BY_CASEFOLD = {mode.casefold(): mode for mode in MODES}
+
+
+def normalize_mode(mode: Any) -> Optional[str]:
+    """Map a raw ES.GetMode ``mode`` value to a canonical mode string.
+
+    The Open API doc types ``mode`` as a number but documents and returns the
+    strings Auto/AI/Manual/Passive. Match case-insensitively and tolerate
+    surrounding whitespace so a firmware that reports e.g. ``"auto"`` still
+    resolves. Returns None for anything unrecognised (including a numeric
+    value, whose ordering the doc never defines) so callers show "unknown"
+    rather than guessing a wrong mode.
+    """
+    if not isinstance(mode, str):
+        return None
+    return _MODE_BY_CASEFOLD.get(mode.strip().casefold())
 
 # Passive-mode power control (charge/discharge setpoints)
 # Upper bound for the charge/discharge Number entities, in watts. 2500 W is the
