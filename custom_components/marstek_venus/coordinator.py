@@ -34,6 +34,12 @@ MAX_CONSECUTIVE_FAILURES = 5
 # values can be presented as current during an outage.
 MAX_STALE_UPDATES = 5
 
+# Upper bound for the poll-interval backoff applied while the device stays
+# unreachable. Backoff only starts after the stale budget is exhausted, so a
+# device that is down for hours ends up probed every few minutes instead of
+# every cycle.
+MAX_BACKOFF_INTERVAL = timedelta(minutes=5)
+
 
 class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
     """
@@ -105,13 +111,17 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         # Timestamp of the last update that fetched fresh data from the device
         self.last_update_time = None
 
+        # Configured poll interval, restored after the backoff applied during
+        # an outage (see _apply_backoff / _reset_interval).
+        self._base_interval = timedelta(seconds=scan_interval)
+
         # Initialize the parent DataUpdateCoordinator
         # The name appears in debug logs
         super().__init__(
             hass,
             _LOGGER,
             name="Marstek Venus E",
-            update_interval=timedelta(seconds=scan_interval),
+            update_interval=self._base_interval,
         )
 
     def get_stats(self) -> Dict[str, Any]:
@@ -163,6 +173,96 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as err:
             _LOGGER.error("Reconnection failed: %s", err)
             return False
+
+    def _handle_es_failure(
+        self, es_error: Optional[Exception], start_time: float
+    ) -> Dict[str, Any]:
+        """Handle a failed ES.GetStatus poll.
+
+        Serves recently cached data to ride out a brief outage, then, once the
+        stale budget is exhausted, backs off the poll interval, surfaces a
+        repair issue and raises UpdateFailed so entities become unavailable.
+        The base coordinator logs the first failure and the recovery, so this
+        path only emits DEBUG.
+        """
+        self._stats["error_count"] += 1
+        self._stats["last_update_success"] = False
+        self._stats["last_update_duration"] = round(time.monotonic() - start_time, 2)
+
+        # If we have recent cached data, serve it briefly to ride out transient
+        # outages. Bound this so stale values are not presented as current
+        # indefinitely: once we exceed MAX_STALE_UPDATES consecutive failures,
+        # fail so entities become unavailable.
+        if (
+            self._last_successful_data is not None
+            and self._consecutive_failures <= MAX_STALE_UPDATES
+        ):
+            _LOGGER.debug(
+                "Serving cached data after ES.GetStatus failure (%d/%d): %s",
+                self._consecutive_failures,
+                MAX_STALE_UPDATES,
+                es_error,
+            )
+            cached = self._last_successful_data.copy()
+            cached["_stale"] = True
+            cached["_error"] = str(es_error)
+            return cached
+
+        # No cached data available, or the stale budget is exhausted: back off
+        # the poll interval, surface a repair issue so the outage is actionable
+        # in the UI (common cause: the device's local API got toggled off, or
+        # it fell off the network), and fail so entities are marked unavailable.
+        self._apply_backoff()
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"{ISSUE_DEVICE_UNREACHABLE}_{self._entry_id}",
+            is_fixable=True,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_DEVICE_UNREACHABLE,
+            data={"entry_id": self._entry_id},
+        )
+
+        error_msg = f"ES.GetStatus failed: {es_error}"
+        if isinstance(es_error, asyncio.TimeoutError):
+            raise UpdateFailed(f"Timeout: {error_msg}") from es_error
+        if isinstance(es_error, MarstekApiError):
+            raise UpdateFailed(f"API error: {error_msg}") from es_error
+        if isinstance(es_error, MarstekConnectionError):
+            raise UpdateFailed(f"Connection error: {error_msg}") from es_error
+        raise UpdateFailed(error_msg) from es_error
+
+    def _apply_backoff(self) -> None:
+        """Lengthen the poll interval while the device stays unreachable.
+
+        Backoff starts only after the stale budget is exhausted (entities are
+        already unavailable), doubling from the configured interval up to
+        MAX_BACKOFF_INTERVAL. The next refresh is scheduled from the updated
+        interval, so a long outage is probed every few minutes rather than
+        every cycle.
+        """
+        steps = self._consecutive_failures - MAX_STALE_UPDATES
+        if steps < 1:
+            return
+        interval = min(
+            self._base_interval * (2 ** min(steps, 8)),
+            MAX_BACKOFF_INTERVAL,
+        )
+        if interval != self.update_interval:
+            self.update_interval = interval
+            _LOGGER.debug(
+                "Backing off Marstek poll interval to %s after %d consecutive failures",
+                interval,
+                self._consecutive_failures,
+            )
+
+    def _reset_interval(self) -> None:
+        """Restore the configured poll interval after a successful update."""
+        if self.update_interval != self._base_interval:
+            self.update_interval = self._base_interval
+            _LOGGER.debug(
+                "Restored Marstek poll interval to %s", self._base_interval
+            )
 
     async def async_apply_manual(self, charge: int, discharge: int) -> None:
         """Set the Manual-mode power to the given charge/discharge setpoint.
@@ -240,15 +340,22 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         # Fetch data from API endpoints
         # Note: Venus E 3 only supports some endpoints, not all from the docs
 
-        # Try to get ES data - this is the critical endpoint
+        # Try to get ES data - this is the critical endpoint.
+        #
+        # Failure logging is intentionally left to the base
+        # DataUpdateCoordinator: it logs the first failure and the eventual
+        # recovery, and stays quiet in between. Logging every failed poll here
+        # would flood the log during a multi-hour outage, so this method only
+        # emits DEBUG for the retry/stale mechanics.
         es_data = None
-        es_error = None
+        es_error: Optional[Exception] = None
 
         try:
             _LOGGER.debug("Fetching energy system status")
             es_data = await self.client.get_es_status()
             self._last_es_error = None
             self._consecutive_failures = 0
+            self._reset_interval()
         except (
             MarstekConnectionError,
             MarstekApiError,
@@ -259,84 +366,28 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             self._last_es_error = str(err)
             self._consecutive_failures += 1
 
-            _LOGGER.warning(
-                "ES.GetStatus failed (attempt %d/%d): %s",
-                self._consecutive_failures,
-                MAX_CONSECUTIVE_FAILURES,
-                err,
-            )
-
-            # If we have too many consecutive failures, try reconnecting
-            if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                _LOGGER.warning(
-                    "Too many consecutive failures (%d), attempting reconnect",
-                    self._consecutive_failures,
-                )
-                if await self._attempt_reconnect():
-                    # Try once more after reconnection
-                    try:
-                        es_data = await self.client.get_es_status()
-                        self._last_es_error = None
-                        self._consecutive_failures = 0
-                        _LOGGER.info("ES.GetStatus succeeded after reconnection")
-                    except Exception as retry_err:
-                        _LOGGER.error(
-                            "ES.GetStatus still failing after reconnect: %s", retry_err
-                        )
-                        es_error = retry_err
+            # Attempt a reconnect exactly once, on the edge where failures
+            # first reach the threshold. A connected UDP socket survives an
+            # unreachable device (the kernel reports ICMP port-unreachable via
+            # error_received; the transport stays usable and resumes once the
+            # device answers), so reconnecting rarely helps and must never run
+            # every cycle.
+            if self._consecutive_failures == MAX_CONSECUTIVE_FAILURES and (
+                await self._attempt_reconnect()
+            ):
+                try:
+                    es_data = await self.client.get_es_status()
+                    self._last_es_error = None
+                    self._consecutive_failures = 0
+                    es_error = None
+                    self._reset_interval()
+                except Exception as retry_err:  # noqa: BLE001
+                    es_error = retry_err
+                    self._last_es_error = str(retry_err)
 
         # If ES data fetch failed, handle gracefully
         if es_data is None:
-            self._stats["error_count"] += 1
-            self._stats["last_update_success"] = False
-            self._stats["last_update_duration"] = round(
-                time.monotonic() - start_time, 2
-            )
-
-            # If we have recent cached data, serve it briefly to ride out
-            # transient outages. Bound this so stale values are not presented
-            # as current indefinitely: once we exceed MAX_STALE_UPDATES
-            # consecutive failures, fail so entities become unavailable.
-            if (
-                self._last_successful_data is not None
-                and self._consecutive_failures <= MAX_STALE_UPDATES
-            ):
-                _LOGGER.warning(
-                    "Using cached data due to ES.GetStatus failure "
-                    "(%d/%d): %s",
-                    self._consecutive_failures,
-                    MAX_STALE_UPDATES,
-                    es_error,
-                )
-                # Return cached data but mark it as stale
-                cached = self._last_successful_data.copy()
-                cached["_stale"] = True
-                cached["_error"] = str(es_error)
-                return cached
-
-            # No cached data available, or the stale budget is exhausted:
-            # fail so entities are marked unavailable, and surface a repair
-            # issue so the outage is actionable in the UI (common cause: the
-            # device's local API got toggled off, or it fell off the network).
-            ir.async_create_issue(
-                self.hass,
-                DOMAIN,
-                f"{ISSUE_DEVICE_UNREACHABLE}_{self._entry_id}",
-                is_fixable=True,
-                severity=ir.IssueSeverity.ERROR,
-                translation_key=ISSUE_DEVICE_UNREACHABLE,
-                data={"entry_id": self._entry_id},
-            )
-
-            error_msg = f"ES.GetStatus failed: {es_error}"
-            if isinstance(es_error, asyncio.TimeoutError):
-                raise UpdateFailed(f"Timeout: {error_msg}") from es_error
-            elif isinstance(es_error, MarstekApiError):
-                raise UpdateFailed(f"API error: {error_msg}") from es_error
-            elif isinstance(es_error, MarstekConnectionError):
-                raise UpdateFailed(f"Connection error: {error_msg}") from es_error
-            else:
-                raise UpdateFailed(error_msg) from es_error
+            return self._handle_es_failure(es_error, start_time)
 
         # ES data fetched successfully, now get optional data
         # Try to get detailed battery status

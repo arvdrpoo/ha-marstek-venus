@@ -190,10 +190,16 @@ class MarstekProtocol(asyncio.DatagramProtocol):
         """
         Called when a protocol error occurs.
 
+        On a connected UDP socket this fires when the kernel receives an ICMP
+        port-unreachable (ECONNREFUSED), i.e. the device is on the network but
+        its local API is not answering. That is an expected, transient
+        condition during an outage; the request layer already surfaces the
+        resulting timeout, so log at DEBUG to avoid flooding the log.
+
         Args:
             exc: The exception that occurred
         """
-        _LOGGER.error("Protocol error: %s", exc)
+        _LOGGER.debug("Protocol error: %s", exc)
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
         """
@@ -481,7 +487,7 @@ class MarstekApiClient:
                 if attempt < retries:
                     # Calculate exponential backoff delay
                     delay = RETRY_BASE_DELAY * (2**attempt)
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Request %s timed out (attempt %d/%d), retrying in %.1fs",
                         method,
                         attempt + 1,
@@ -490,7 +496,9 @@ class MarstekApiClient:
                     )
                     await asyncio.sleep(delay)
                 else:
-                    _LOGGER.error(
+                    # Final failure is surfaced to the coordinator, which logs
+                    # it once; keep the retry mechanics at DEBUG.
+                    _LOGGER.debug(
                         "Request %s failed after %d attempts due to timeout",
                         method,
                         retries + 1,
@@ -511,7 +519,7 @@ class MarstekApiClient:
                 last_error = err
                 if attempt < retries:
                     delay = RETRY_BASE_DELAY * (2**attempt)
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Request %s connection error (attempt %d/%d): %s, retrying in %.1fs",
                         method,
                         attempt + 1,
@@ -521,7 +529,9 @@ class MarstekApiClient:
                     )
                     await asyncio.sleep(delay)
                 else:
-                    _LOGGER.error(
+                    # Final failure is surfaced to the coordinator, which logs
+                    # it once; keep the retry mechanics at DEBUG.
+                    _LOGGER.debug(
                         "Request %s failed after %d attempts due to connection error: %s",
                         method,
                         retries + 1,
