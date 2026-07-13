@@ -437,7 +437,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Energy meter not available: %s", err)
 
         # Optional API calls, each gated by a config option. These rarely
-        # change and add ~2.5s per call to the update cycle (rate limiting),
+        # change and add ~1s per call to the update cycle (rate limiting),
         # so they are off by default. Enabling all three can push the cycle
         # past short scan intervals.
         wifi_data = None

@@ -5,7 +5,7 @@ Comprehensive test script for Marstek Venus E devices.
 This script tests all available API endpoints and displays device data.
 Properly handles Venus E 3 requirements:
 - Only certain API endpoints are supported
-- Requires 2+ second delay between requests (handled automatically by API client)
+- Paces requests ~1s apart (handled automatically by API client)
 
 Usage:
     python3 test_device.py [device_ip] [port]
@@ -107,7 +107,7 @@ async def test_device(host: str, port: int):
         print("  ❌ Wifi.GetStatus - Not supported")
 
         print("\nImportant Notes:")
-        print("  • Rate limiting (2.5s between requests) is automatic")
+        print("  • Rate limiting (~1s between requests) is automatic")
         print("  • Home Assistant integration uses 30s polling")
         print("  • Mode control may not be available on all Venus E 3 hardware")
 

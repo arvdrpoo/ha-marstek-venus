@@ -9,8 +9,12 @@ from typing import Any, Dict, Optional
 # Default timeout for UDP responses
 TIMEOUT = 10
 
-# Minimum time between requests (Venus E 3 requires 2+ seconds)
-MIN_REQUEST_INTERVAL = 2.5
+# Minimum time between requests. Measured on a VenusE 3 over WiFi (UDP probe,
+# ES.GetStatus): single-attempt packet loss is ~15% and flat from 1.0s to 2.5s,
+# then jumps to ~50% below ~0.7s. 1.0s sits at the floor of that baseline (no
+# extra loss vs 2.5s) while halving the poll cycle; the retry logic in
+# send_command absorbs the baseline loss.
+MIN_REQUEST_INTERVAL = 1.0
 
 # Retry configuration
 MAX_RETRIES = 3
