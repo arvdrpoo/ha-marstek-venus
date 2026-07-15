@@ -9,12 +9,14 @@ from typing import Any, Dict, Optional
 # Default timeout for UDP responses
 TIMEOUT = 10
 
-# Minimum time between requests. Measured on a VenusE 3 over WiFi (UDP probe,
-# ES.GetStatus): single-attempt packet loss is ~15% and flat from 1.0s to 2.5s,
-# then jumps to ~50% below ~0.7s. 1.0s sits at the floor of that baseline (no
-# extra loss vs 2.5s) while halving the poll cycle; the retry logic in
-# send_command absorbs the baseline loss.
-MIN_REQUEST_INTERVAL = 1.0
+# Minimum time between requests. The device's local API is destabilised by
+# rapid polling: closely-spaced request bursts can make it reboot and lose
+# persisted config (CT pairing, manual schedules, and the local-API enable
+# toggle). A packet-loss probe (probe_interval.py) shows loss is flat from 1.0s
+# to 2.5s, but packet loss is not the binding constraint here; firmware
+# stability is. Keep this conservative and do not lower it toward the
+# packet-loss floor.
+MIN_REQUEST_INTERVAL = 2.5
 
 # Retry configuration
 MAX_RETRIES = 3
@@ -773,33 +775,3 @@ class MarstekApiClient:
         result = await self.send_command("ES.SetMode", params)
         # Result should contain set_result: true/false
         return result.get("set_result", False)
-
-    async def set_manual_power(self, charge_w: int, discharge_w: int) -> bool:
-        """Set continuous Manual-mode power from HA charge/discharge setpoints.
-
-        Uses time slot 0 with an all-day, all-week window, matching how the
-        Marstek app drives continuous manual power. Unlike Passive, this holds
-        until changed (no countdown), so it survives restarts and needs no
-        re-assert. Slot 0 is therefore reserved for this control.
-
-        Args:
-            charge_w: Charge power in watts (>= 0)
-            discharge_w: Discharge power in watts (>= 0)
-
-        Returns:
-            True if the device accepted the command.
-        """
-        power = charge_discharge_to_wire_power(charge_w, discharge_w)
-        return await self.set_mode(
-            "Manual",
-            {
-                "manual_cfg": {
-                    "time_num": 0,
-                    "start_time": "00:00",
-                    "end_time": "23:59",
-                    "week_set": 127,
-                    "power": power,
-                    "enable": 1,
-                }
-            },
-        )

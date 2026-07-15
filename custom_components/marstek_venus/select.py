@@ -15,15 +15,19 @@ import voluptuous as vol
 
 from .api import MarstekApiClient, MarstekApiError
 from .const import (
+    DAY_PRESET_EVERYDAY,
+    DAY_PRESET_LABELS,
     DOMAIN,
     MODE_AI,
     MODE_AUTO,
     MODE_MANUAL,
     MODE_PASSIVE,
     MODES,
+    NUM_SCHEDULE_SLOTS,
     normalize_mode,
 )
 from .coordinator import MarstekDataUpdateCoordinator
+from .slot_entity import ScheduleSlotEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,8 +53,22 @@ async def async_setup_entry(
     client: MarstekApiClient = data["client"]
     device_info: Dict[str, Any] = data["device_info"]
 
-    # Create the mode select entity
-    async_add_entities([MarstekModeSelect(coordinator, client, entry, device_info)])
+    # Create the mode select entity plus the per-slot day-preset selects.
+    wifi_mac = device_info.get("wifi_mac", "unknown")
+    model = device_info.get("device", "VenusE")
+    dev = DeviceInfo(
+        identifiers={(DOMAIN, wifi_mac)},
+        name=f"Marstek {model}",
+        manufacturer="Marstek",
+        model=model,
+        sw_version=str(device_info.get("ver", "Unknown")),
+    )
+    entities = [MarstekModeSelect(coordinator, client, entry, device_info)]
+    entities += [
+        SlotDaysSelect(coordinator, wifi_mac, i, dev)
+        for i in range(NUM_SCHEDULE_SLOTS)
+    ]
+    async_add_entities(entities)
 
     # Register entity platform services for advanced mode control
     platform = entity_platform.current_platform.get()
@@ -217,10 +235,12 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         # numbers). Delegate so selecting Manual applies whatever setpoint is
         # currently held (0 W = idle manual).
         if option == MODE_MANUAL:
-            await self.coordinator.async_apply_manual(
-                charge=self.coordinator.manual_charge_power,
-                discharge=self.coordinator.manual_discharge_power,
-            )
+            # Manual mode runs the HA-owned schedule.
+            if not await self.coordinator.async_apply_schedule():
+                _LOGGER.warning(
+                    "Cannot switch to Manual: no schedule slots are enabled. "
+                    "Enable at least one slot, then apply."
+                )
             return
 
         try:
@@ -249,8 +269,8 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
                 _LOGGER.error("Failed to set mode to %s", option)
                 return
 
-            # Left Manual for another mode: reset the displayed setpoints.
-            self.coordinator.clear_manual_control()
+            # Left for another mode: reset the displayed Passive setpoints.
+            self.coordinator.clear_passive_control()
 
             # Refresh coordinator data to reflect the change
             await self.coordinator.async_request_refresh()
@@ -376,9 +396,9 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
                 return
 
             # Switched to a non-Manual mode via a service: reset the displayed
-            # Charge/Discharge setpoints. The Manual service sets its own slots.
+            # Passive Charge/Discharge setpoints.
             if mode != MODE_MANUAL:
-                self.coordinator.clear_manual_control()
+                self.coordinator.clear_passive_control()
 
             # Refresh coordinator data
             await self.coordinator.async_request_refresh()
@@ -510,3 +530,26 @@ class MarstekModeSelect(CoordinatorEntity, SelectEntity):
         except Exception as err:
             _LOGGER.error("Failed to get mode details: %s", err)
             raise
+
+
+class SlotDaysSelect(ScheduleSlotEntity, SelectEntity):
+    """Day-of-week preset for one Manual schedule slot."""
+
+    _attr_icon = "mdi:calendar-week"
+
+    def __init__(self, coordinator, wifi_mac, index, device_info) -> None:
+        super().__init__(coordinator, wifi_mac, index, device_info, "days")
+        self._attr_name = f"Slot {index + 1} days"
+        self._attr_options = list(DAY_PRESET_LABELS.values())
+        self._label_to_key = {label: key for key, label in DAY_PRESET_LABELS.items()}
+
+    @property
+    def current_option(self) -> str:
+        return DAY_PRESET_LABELS.get(
+            self.slot.get("days"), DAY_PRESET_LABELS[DAY_PRESET_EVERYDAY]
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        key = self._label_to_key.get(option)
+        if key:
+            await self.async_apply_change(days=key)

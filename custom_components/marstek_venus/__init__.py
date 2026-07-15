@@ -7,9 +7,11 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.device_registry import format_mac
+from homeassistant.helpers.storage import Store
 
 from .api import MarstekApiClient, MarstekConnectionError
 from .const import (
+    CONF_AUTO_REASSERT,
     CONF_HOST,
     CONF_PORT,
     CONF_SCAN_INTERVAL,
@@ -17,12 +19,15 @@ from .const import (
     CONF_ENABLE_WIFI_SENSORS,
     CONF_ENABLE_BLE_SENSORS,
     CONF_ENABLE_PV_SENSORS,
+    DEFAULT_AUTO_REASSERT,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DEFAULT_ENABLE_BLE_SENSORS,
     DEFAULT_ENABLE_PV_SENSORS,
     DOMAIN,
+    SCHEDULE_STORAGE_KEY,
+    SCHEDULE_STORAGE_VERSION,
     TIMEOUT,
 )
 from .coordinator import MarstekDataUpdateCoordinator
@@ -35,6 +40,9 @@ PLATFORMS = [
     Platform.SELECT,
     Platform.BINARY_SENSOR,
     Platform.NUMBER,
+    Platform.SWITCH,
+    Platform.TIME,
+    Platform.BUTTON,
 ]
 
 
@@ -76,6 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 CONF_ENABLE_WIFI_SENSORS: DEFAULT_ENABLE_WIFI_SENSORS,
                 CONF_ENABLE_BLE_SENSORS: DEFAULT_ENABLE_BLE_SENSORS,
                 CONF_ENABLE_PV_SENSORS: DEFAULT_ENABLE_PV_SENSORS,
+                CONF_AUTO_REASSERT: DEFAULT_AUTO_REASSERT,
             }
         )
 
@@ -85,6 +94,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     enable_wifi = entry.options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS)
     enable_ble = entry.options.get(CONF_ENABLE_BLE_SENSORS, DEFAULT_ENABLE_BLE_SENSORS)
     enable_pv = entry.options.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS)
+    auto_reassert = entry.options.get(CONF_AUTO_REASSERT, DEFAULT_AUTO_REASSERT)
+
+    # Load the HA-owned Manual schedule (source of truth; the device cannot
+    # report its slot table back over the local API).
+    schedule_store = Store(
+        hass, SCHEDULE_STORAGE_VERSION, f"{SCHEDULE_STORAGE_KEY}.{entry.entry_id}"
+    )
+    stored_schedule = await schedule_store.async_load()
 
     _LOGGER.info("Setting up Marstek Venus E at %s:%s", host, port)
 
@@ -121,6 +138,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         enable_wifi=enable_wifi,
         enable_ble=enable_ble,
         enable_pv=enable_pv,
+        schedule=stored_schedule,
+        store=schedule_store,
+        auto_reassert=auto_reassert,
     )
 
     # Fetch initial data

@@ -53,7 +53,11 @@
           "timeout": "API Timeout (seconds)",
           "enable_wifi_sensors": "Enable WiFi Sensors",
           "enable_ble_sensors": "Enable Bluetooth Sensors",
-          "enable_pv_sensors": "Enable PV Sensors (Venus D only)"
+          "enable_pv_sensors": "Enable PV Sensors (Venus D only)",
+          "auto_reassert_schedule": "Re-apply schedule after reconnect"
+        },
+        "data_description": {
+          "auto_reassert_schedule": "After the device recovers from an outage, re-apply the saved Manual schedule. Forces the device into Manual mode on recovery."
         }
       }
     },

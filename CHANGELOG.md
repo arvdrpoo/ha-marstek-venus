@@ -5,6 +5,37 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-15
+
+### Added
+
+- **HA-owned Manual schedule** with per-slot entities. Each of 4 slots exposes an
+  enable switch, start/end time, a power number (negative = charge, positive =
+  discharge), and a day-preset select (Every day / Mon-Fri / Sat-Sun). An
+  `Apply schedule` button writes the slots to the device. The local API cannot
+  read the schedule back, so Home Assistant stores it and is the source of truth.
+- `Passive Duration` number: how long a Passive charge/discharge setpoint holds.
+- Option **Re-apply schedule after reconnect** (default off): after the device
+  recovers from an outage, HA re-asserts the saved schedule, so a device reset
+  that wipes the schedule is repaired automatically. Forces Manual on recovery.
+
+### Changed
+
+- **Breaking:** `Charge Power` / `Discharge Power` now drive **Passive** mode (a
+  temporary setpoint held for `Passive Duration`) instead of writing Manual time
+  slot 0. This stops them from overwriting a Manual schedule. Their entity IDs
+  are unchanged. Selecting `Manual` on the mode select now applies the HA
+  schedule.
+- Reverted the minimum inter-request interval to **2.5s** (from 1.0s). The 1.0s
+  value was validated only against packet loss; on real hardware the faster rate
+  destabilised the device, which would reset and drop its CT pairing, Manual
+  schedule, and local-API toggle. 2.5s is the stability floor.
+
+### Fixed
+
+- The Charge/Discharge controls no longer silently overwrite a Manual schedule
+  configured in the Marstek app (the "slot 0 clobber").
+
 ## [0.4.2] - 2026-07-13
 
 ### Changed

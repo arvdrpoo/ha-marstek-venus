@@ -2,6 +2,16 @@
 
 This guide explains how to use the Manual Mode scheduling features of the Marstek Venus integration for Home Assistant.
 
+> **v0.5.0:** The easiest way to schedule is now the **per-slot entities**, not
+> service calls. Because the Marstek local API cannot read the device's schedule
+> back, Home Assistant owns it: edit the `Slot N` entities (enabled / start /
+> end / power / days) and press the **Apply schedule** button to write them to
+> the device. Selecting **Manual** on the Operating Mode select applies the
+> schedule too. Note that `Charge Power` / `Discharge Power` now drive
+> **Passive** mode (a temporary override), so they no longer touch the Manual
+> schedule. The service calls documented below still work for advanced use
+> (custom day combinations, automations).
+
 ## Table of Contents
 
 - [Overview](#overview)

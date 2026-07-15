@@ -7,8 +7,9 @@ A custom Home Assistant integration for the Marstek Venus home battery system, u
 - **Battery Monitoring**: Track battery state of charge, capacity, power, temperature, and charge/discharge state
 - **Power Flow Monitoring**: Monitor solar (PV), grid, and load power in real-time
 - **Energy Statistics**: Track cumulative energy from solar, grid import/export, and load consumption
-- **Mode Control**: Switch operating mode (Auto/AI/Manual/Passive) and schedule Manual mode via service calls
-- **Battery Power Control**: Set charge or discharge power directly with `Charge Power` / `Discharge Power` controls, ideal for price-based automations
+- **Mode Control**: Switch operating mode (Auto/AI/Manual/Passive) from a select entity
+- **Manual Schedule (HA-owned)**: Define up to 4 charge/discharge time windows as per-slot entities and push them to the device with an Apply button; optionally re-assert them automatically after a device reset. The local API cannot read the schedule back, so Home Assistant is the source of truth
+- **Battery Power Control**: `Charge Power` / `Discharge Power` set a temporary power via Passive mode (held for a configurable duration, then the device reverts), ideal for price-based automations
 - **Autodiscovery**: Devices are found automatically via UDP broadcast and DHCP; manual IP entry is always available
 - **Local Control**: Communicates directly with your device over your local network (no cloud required)
 - **Resilient**: Rides out short outages, marks entities unavailable during long ones, and recovers automatically; a "Last Seen" sensor tracks the last successful contact
@@ -122,15 +123,28 @@ Before installation:
 - `Operating Mode` - Switch between operating modes **
   - **Auto**: Automatic mode - device manages itself
   - **AI**: AI-based optimization mode
-  - **Manual**: Manual power control mode with scheduling
+  - **Manual**: Runs the HA-owned schedule (see below)
   - **Passive**: Direct power control mode (defaults to 0W standby)
 
-**Number Entities:**
+**Passive power (Number Entities):**
 
-- `Charge Power` / `Discharge Power` (0-2500 W) - Set continuous charge or
-  discharge power. They are mutually exclusive (setting one zeroes the other);
-  both zero holds at idle. These drive Manual mode, so the setpoint holds until
-  changed. Charge is positive, matching the `Battery Power` sensor.
+- `Charge Power` / `Discharge Power` (0-2500 W) - Set a temporary charge or
+  discharge power via Passive mode. Mutually exclusive (setting one zeroes the
+  other). The power holds for `Passive Duration`, then the device reverts on its
+  own, so these never disturb the Manual schedule. Charge is entered as a
+  positive value.
+- `Passive Duration` (minutes) - How long a Charge/Discharge setpoint holds.
+
+**Manual schedule (per-slot entities):**
+
+Because the local API cannot read the device's schedule back, Home Assistant
+owns it. Each of the 4 slots exposes `Slot N enabled` (switch), `Slot N start` /
+`Slot N end` (time), `Slot N power` (number; negative = charge, positive =
+discharge), and `Slot N days` (select: Every day / Mon-Fri / Sat-Sun). Editing
+these changes only HA state; press `Apply schedule` (button) to write all slots
+to the device (this also switches it to Manual). Selecting `Manual` on the mode
+select applies the schedule too. Enable **Re-apply schedule after reconnect** in
+the integration options to have HA re-assert the schedule after a device reset.
 
 \*\* Mode control may not be supported on all Venus E 3 hardware revisions. If unavailable, the mode will show as "Unknown".
 
@@ -215,7 +229,6 @@ custom_components/marstek_venus/
 ## Future Enhancements
 
 - [ ] Reconfigure flow to change IP/port without re-adding
-- [ ] Number/time entities for Passive and Manual mode power settings
 - [ ] Additional translations
 
 ## Contributing

@@ -67,4 +67,52 @@ PASSIVE_POWER_STEP = 50   # W
 ISSUE_DEVICE_UNREACHABLE = "device_unreachable"
 
 # Platforms
-PLATFORMS = ["sensor", "select", "binary_sensor", "number"]
+PLATFORMS = ["sensor", "select", "binary_sensor", "number", "switch", "time", "button"]
+
+# --- HA-owned Manual schedule ------------------------------------------------
+# The local API cannot READ the device's Manual slot table (ES.GetMode only
+# returns the active mode + power; there is no get-schedule method). So HA is
+# the source of truth for the schedule: it stores the slots, shows/edits them
+# as per-slot entities, and writes them to the device with ES.SetMode.
+
+# Number of Manual-schedule slots surfaced as HA entities. The device supports
+# 10 (time_num 0-9); we expose a smaller, manageable set.
+NUM_SCHEDULE_SLOTS = 4
+
+# Day-of-week presets. Value is the device week_set bitmap: a byte, low 7 bits,
+# bit 0 = Monday .. bit 6 = Sunday; 127 = every day.
+DAY_PRESET_EVERYDAY = "everyday"
+DAY_PRESET_WEEKDAYS = "weekdays"
+DAY_PRESET_WEEKEND = "weekend"
+DAY_PRESETS = {
+    DAY_PRESET_EVERYDAY: 0b1111111,  # 127, Mon-Sun
+    DAY_PRESET_WEEKDAYS: 0b0011111,  # 31,  Mon-Fri
+    DAY_PRESET_WEEKEND: 0b1100000,   # 96,  Sat-Sun
+}
+DAY_PRESET_LABELS = {
+    DAY_PRESET_EVERYDAY: "Every day",
+    DAY_PRESET_WEEKDAYS: "Mon-Fri",
+    DAY_PRESET_WEEKEND: "Sat-Sun",
+}
+
+# Bound for a schedule slot's power slider, in watts. Signed: negative = charge,
+# positive = discharge (the device wire convention for manual_cfg.power).
+MAX_MANUAL_POWER = 2500
+
+# Passive-mode quick control (the repurposed Charge/Discharge number entities).
+# Passive holds a power for a countdown, then the device reverts on its own, so
+# these never touch the Manual slot table.
+DEFAULT_PASSIVE_COUNTDOWN = 3600  # seconds a Passive setpoint holds
+MIN_PASSIVE_COUNTDOWN = 60
+MAX_PASSIVE_COUNTDOWN = 86400
+
+# Auto re-assert the HA-owned schedule to the device after it recovers from an
+# outage. Off by default: it forces the device into Manual mode on recovery,
+# which is a surprising side effect to enable implicitly. Turn it on to make the
+# schedule survive a device reset without a manual re-apply.
+CONF_AUTO_REASSERT = "auto_reassert_schedule"
+DEFAULT_AUTO_REASSERT = False
+
+# Persistent store for the HA-owned schedule (keyed per config entry).
+SCHEDULE_STORAGE_VERSION = 1
+SCHEDULE_STORAGE_KEY = f"{DOMAIN}.schedule"

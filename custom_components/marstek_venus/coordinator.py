@@ -14,15 +14,23 @@ from homeassistant.helpers.update_coordinator import (
 )
 from homeassistant.util import dt as dt_util
 
-from .api import MarstekApiClient, MarstekApiError, MarstekConnectionError
+from .api import (
+    MarstekApiClient,
+    MarstekApiError,
+    MarstekConnectionError,
+    charge_discharge_to_wire_power,
+)
 from .const import (
+    DEFAULT_AUTO_REASSERT,
     DEFAULT_ENABLE_BLE_SENSORS,
     DEFAULT_ENABLE_PV_SENSORS,
     DEFAULT_ENABLE_WIFI_SENSORS,
+    DEFAULT_PASSIVE_COUNTDOWN,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ISSUE_DEVICE_UNREACHABLE,
 )
+from .schedule import default_schedule, normalize_schedule, slot_to_manual_cfg
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +47,10 @@ MAX_STALE_UPDATES = 5
 # device that is down for hours ends up probed every few minutes instead of
 # every cycle.
 MAX_BACKOFF_INTERVAL = timedelta(minutes=5)
+
+# Minimum seconds between automatic schedule re-asserts, so a device that flaps
+# in and out cannot trigger a write storm.
+REASSERT_COOLDOWN = 600
 
 
 class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
@@ -65,6 +77,9 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         enable_wifi: bool = DEFAULT_ENABLE_WIFI_SENSORS,
         enable_ble: bool = DEFAULT_ENABLE_BLE_SENSORS,
         enable_pv: bool = DEFAULT_ENABLE_PV_SENSORS,
+        schedule: Optional[list] = None,
+        store: Any = None,
+        auto_reassert: bool = DEFAULT_AUTO_REASSERT,
     ) -> None:
         """
         Initialize the coordinator.
@@ -86,13 +101,27 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         self.enable_ble = enable_ble
         self.enable_pv = enable_pv
 
-        # Manual-mode power control state. The Charge/Discharge Number entities
-        # drive Manual time slot 0, which the device holds until changed (no
-        # countdown), so no re-assert is needed. These are the HA-desired
-        # setpoints; the device does not report a commanded power back, so they
-        # are also what the Number entities display.
-        self.manual_charge_power = 0
-        self.manual_discharge_power = 0
+        # Passive-mode quick-control state. The Charge/Discharge Number entities
+        # drive Passive mode (a power held for a countdown, after which the
+        # device reverts), which never touches the Manual slot table. The device
+        # does not report a commanded power back, so these are also what the
+        # Number entities display.
+        self.passive_charge_power = 0
+        self.passive_discharge_power = 0
+        self.passive_countdown = DEFAULT_PASSIVE_COUNTDOWN
+
+        # HA-owned Manual schedule (source of truth; the local API cannot read
+        # the device's slot table back). Edited via per-slot entities, written
+        # to the device with ES.SetMode by the Apply button and, if enabled, on
+        # recovery from an outage.
+        self.schedule = (
+            normalize_schedule(schedule) if schedule is not None else default_schedule()
+        )
+        self._store = store
+        self.auto_reassert = auto_reassert
+        self._device_was_down = False
+        self._reassert_in_progress = False
+        self._last_reassert = 0.0
 
         # Statistics tracking for diagnostics
         self._stats = {
@@ -213,6 +242,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         # in the UI (common cause: the device's local API got toggled off, or
         # it fell off the network), and fail so entities are marked unavailable.
         self._apply_backoff()
+        self._device_was_down = True
         ir.async_create_issue(
             self.hass,
             DOMAIN,
@@ -264,44 +294,121 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
                 "Restored Marstek poll interval to %s", self._base_interval
             )
 
-    async def async_apply_manual(self, charge: int, discharge: int) -> None:
-        """Set the Manual-mode power to the given charge/discharge setpoint.
+    async def async_apply_passive(self, charge: int, discharge: int) -> None:
+        """Apply a Passive-mode power setpoint (charge/discharge quick control).
 
-        Exactly one of the two is kept (charge wins if both are set). Manual
-        mode holds until changed, so this is a one-shot command with no
-        re-assert. Stores the desired setpoint for the Number entities and
-        pushes it to the device.
+        Exactly one of the two is kept (charge wins if both are set). Passive
+        holds the power for ``passive_countdown`` seconds, then the device
+        reverts on its own, so this never touches the Manual slot table. Stores
+        the setpoint for the Number entities and pushes it to the device.
         """
         charge = max(0, int(charge))
         discharge = max(0, int(discharge))
         if charge and discharge:
             discharge = 0
 
-        self.manual_charge_power = charge
-        self.manual_discharge_power = discharge
+        self.passive_charge_power = charge
+        self.passive_discharge_power = discharge
         # Reflect the new setpoint in the Number entities right away.
         self.async_update_listeners()
 
+        power = charge_discharge_to_wire_power(charge, discharge)
         try:
-            ok = await self.client.set_manual_power(charge, discharge)
+            ok = await self.client.set_mode(
+                "Passive",
+                {"passive_cfg": {"power": power, "cd_time": self.passive_countdown}},
+            )
             if not ok:
-                _LOGGER.error("Device rejected manual setpoint %s/%s W", charge, discharge)
+                _LOGGER.error("Device rejected passive setpoint %s/%s W", charge, discharge)
         except (MarstekApiError, MarstekConnectionError, asyncio.TimeoutError, TimeoutError) as err:
-            _LOGGER.warning("Failed to apply manual setpoint: %s", err)
+            _LOGGER.warning("Failed to apply passive setpoint: %s", err)
 
         await self.async_request_refresh()
 
-    def clear_manual_control(self) -> None:
-        """Reset the displayed setpoints when another mode takes over.
+    def clear_passive_control(self) -> None:
+        """Zero the displayed Passive setpoints when another mode takes over.
 
-        The mode switch itself is issued by the caller (e.g. the select). This
+        The mode switch itself is issued by the caller (e.g. the select); this
         only zeroes the Number entities so they stop showing a stale setpoint.
         """
-        if not (self.manual_charge_power or self.manual_discharge_power):
+        if not (self.passive_charge_power or self.passive_discharge_power):
             return
-        self.manual_charge_power = 0
-        self.manual_discharge_power = 0
+        self.passive_charge_power = 0
+        self.passive_discharge_power = 0
         self.async_update_listeners()
+
+    async def async_save_schedule(self) -> None:
+        """Persist the HA-owned schedule and refresh the slot entities."""
+        if self._store is not None:
+            await self._store.async_save(self.schedule)
+        self.async_update_listeners()
+
+    async def async_apply_schedule(self, *, full: bool = True) -> bool:
+        """Write the HA-owned schedule to the device via ES.SetMode.
+
+        Each enabled slot is written as a Manual slot, which also switches the
+        device into Manual mode. With ``full`` set, slots disabled in HA are
+        also written with enable=0 so the device's table exactly matches HA;
+        without it only enabled slots are written (recovery, where the device's
+        table was already wiped). No-op when nothing is enabled, so an empty
+        schedule never forces the device into an idle Manual mode.
+
+        Returns True if every write the device acknowledged succeeded.
+        """
+        enabled = [(i, s) for i, s in enumerate(self.schedule) if s.get("enable")]
+        if not enabled:
+            _LOGGER.info("Manual schedule has no enabled slots; not applying")
+            return False
+
+        # Enabled slots first: the first Manual write switches the device to
+        # Manual mode. Optionally clear the rest so stale device slots go away.
+        writes = [(i, s, False) for i, s in enabled]
+        if full:
+            writes += [
+                (i, s, True)
+                for i, s in enumerate(self.schedule)
+                if not s.get("enable")
+            ]
+
+        ok_all = True
+        for index, slot, disable in writes:
+            cfg = slot_to_manual_cfg(index, slot, force_disable=disable)
+            try:
+                if not await self.client.set_mode("Manual", cfg):
+                    ok_all = False
+                    _LOGGER.error("Device rejected schedule slot %d", index)
+            except (
+                MarstekApiError,
+                MarstekConnectionError,
+                asyncio.TimeoutError,
+                TimeoutError,
+            ) as err:
+                ok_all = False
+                _LOGGER.warning("Failed to write schedule slot %d: %s", index, err)
+
+        await self.async_request_refresh()
+        return ok_all
+
+    def _maybe_reassert_schedule(self) -> None:
+        """Re-push the schedule after an outage, if enabled and past cooldown."""
+        if not self.auto_reassert or self._reassert_in_progress:
+            return
+        if time.monotonic() - self._last_reassert < REASSERT_COOLDOWN:
+            _LOGGER.debug("Skipping schedule re-assert (cooldown)")
+            return
+        if not any(s.get("enable") for s in self.schedule):
+            return
+        self._last_reassert = time.monotonic()
+        self._reassert_in_progress = True
+        self.hass.async_create_task(self._run_reassert())
+
+    async def _run_reassert(self) -> None:
+        """Background task: re-assert the schedule to the device after recovery."""
+        _LOGGER.info("Re-asserting Manual schedule after device recovery")
+        try:
+            await self.async_apply_schedule(full=False)
+        finally:
+            self._reassert_in_progress = False
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """
@@ -389,6 +496,12 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         if es_data is None:
             return self._handle_es_failure(es_error, start_time)
 
+        # Recovered from a real outage: optionally re-assert the schedule so a
+        # device reset that wiped it is repaired without manual intervention.
+        if self._device_was_down:
+            self._device_was_down = False
+            self._maybe_reassert_schedule()
+
         # ES data fetched successfully, now get optional data
         # Try to get detailed battery status
         # Venus E 3 may not support this, fallback to ES data
@@ -437,7 +550,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Energy meter not available: %s", err)
 
         # Optional API calls, each gated by a config option. These rarely
-        # change and add ~1s per call to the update cycle (rate limiting),
+        # change and add ~2.5s per call to the update cycle (rate limiting),
         # so they are off by default. Enabling all three can push the cycle
         # past short scan intervals.
         wifi_data = None

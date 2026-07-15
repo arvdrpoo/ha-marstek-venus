@@ -28,12 +28,14 @@ from .const import (
     CONF_ENABLE_WIFI_SENSORS,
     CONF_ENABLE_BLE_SENSORS,
     CONF_ENABLE_PV_SENSORS,
+    CONF_AUTO_REASSERT,
     DEFAULT_NAME,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DEFAULT_ENABLE_BLE_SENSORS,
     DEFAULT_ENABLE_PV_SENSORS,
+    DEFAULT_AUTO_REASSERT,
     DOMAIN,
     MIN_SCAN_INTERVAL,
     MAX_SCAN_INTERVAL,
@@ -402,6 +404,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_ENABLE_PV_SENSORS,
                     default=values.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS)
+                ): cv.boolean,
+                vol.Optional(
+                    CONF_AUTO_REASSERT,
+                    default=values.get(CONF_AUTO_REASSERT, DEFAULT_AUTO_REASSERT)
                 ): cv.boolean,
             }),
             errors=errors,

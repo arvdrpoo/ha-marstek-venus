@@ -40,9 +40,14 @@ async def async_get_config_entry_diagnostics(
         },
         "device_info": async_redact_data(dict(data.get("device_info", {})), TO_REDACT),
         "stats": coordinator.get_stats(),
-        "manual_control": {
-            "charge_power": coordinator.manual_charge_power,
-            "discharge_power": coordinator.manual_discharge_power,
+        "passive_control": {
+            "charge_power": coordinator.passive_charge_power,
+            "discharge_power": coordinator.passive_discharge_power,
+            "countdown": coordinator.passive_countdown,
+        },
+        "schedule": {
+            "auto_reassert": coordinator.auto_reassert,
+            "slots": coordinator.schedule,
         },
         "coordinator_data": async_redact_data(
             coordinator.data if isinstance(coordinator.data, dict) else {}, TO_REDACT
