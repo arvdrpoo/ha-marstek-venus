@@ -23,12 +23,14 @@ from .api import (
 from .const import (
     DEFAULT_AUTO_REASSERT,
     DEFAULT_ENABLE_BLE_SENSORS,
+    DEFAULT_ENABLE_CT_SENSORS,
     DEFAULT_ENABLE_PV_SENSORS,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DEFAULT_PASSIVE_COUNTDOWN,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ISSUE_DEVICE_UNREACHABLE,
+    SLOW_POLL_TARGET,
 )
 from .schedule import default_schedule, normalize_schedule, slot_to_manual_cfg
 
@@ -77,6 +79,7 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         enable_wifi: bool = DEFAULT_ENABLE_WIFI_SENSORS,
         enable_ble: bool = DEFAULT_ENABLE_BLE_SENSORS,
         enable_pv: bool = DEFAULT_ENABLE_PV_SENSORS,
+        enable_ct: bool = DEFAULT_ENABLE_CT_SENSORS,
         schedule: Optional[list] = None,
         store: Any = None,
         auto_reassert: bool = DEFAULT_AUTO_REASSERT,
@@ -100,6 +103,10 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
         self.enable_wifi = enable_wifi
         self.enable_ble = enable_ble
         self.enable_pv = enable_pv
+        self.enable_ct = enable_ct
+
+        # Cycle counter for tiered polling (see _async_update_data).
+        self._poll_count = 0
 
         # Passive-mode quick-control state. The Charge/Discharge Number entities
         # drive Passive mode (a power held for a countdown, after which the
@@ -498,84 +505,119 @@ class MarstekDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Recovered from a real outage: optionally re-assert the schedule so a
         # device reset that wiped it is repaired without manual intervention.
-        if self._device_was_down:
+        just_recovered = self._device_was_down
+        if just_recovered:
             self._device_was_down = False
             self._maybe_reassert_schedule()
 
-        # ES data fetched successfully, now get optional data
-        # Try to get detailed battery status
-        # Venus E 3 may not support this, fallback to ES data
-        bat_data = None
-        try:
-            _LOGGER.debug("Fetching battery status")
-            bat_data = await self.client.get_bat_status()
-        except Exception as err:
-            _LOGGER.debug("Bat.GetStatus not available, using ES data: %s", err)
-            # Fallback: Use ES data for battery sensors
-            bat_data = {
-                "soc": es_data.get("bat_soc"),
-                "bat_capacity": None,  # Remaining capacity not available
-                # Other battery fields not available on Venus E 3
-                "charg_flag": None,
-                "dischrg_flag": None,
-                "bat_temp": None,
-                "rated_capacity": None,
-            }
+        # Tiered polling. ES.GetStatus (fetched above every cycle) already
+        # carries SOC, every power flow and the energy totals, so those sensors
+        # stay fresh regardless. The slow-changing endpoints (battery detail,
+        # operating mode, CT meter) are polled only every Nth cycle to keep the
+        # total query volume down: the device firmware triggers a destructive
+        # "safety reset" (losing CT pairing, the Manual schedule and the
+        # local-API toggle) when polled too frequently. N is derived from the
+        # poll interval so slow data still refreshes roughly every
+        # SLOW_POLL_TARGET seconds; when the interval already meets that target,
+        # every cycle is a slow cycle. A fresh install and every recovery force
+        # a slow cycle so the full data set is populated.
+        prev = self._last_successful_data
+        interval_s = max(1, int(self._base_interval.total_seconds()))
+        slow_every = max(1, round(SLOW_POLL_TARGET / interval_s))
+        poll_slow = (
+            prev is None or just_recovered or self._poll_count % slow_every == 0
+        )
+        self._poll_count += 1
 
-        # Try to get operating mode
-        # May not be supported on all Venus E 3 hardware revisions
-        # Note: Rate limiting is handled automatically by the API client
-        mode_data = None
-        try:
-            _LOGGER.debug("Fetching operating mode")
-            mode_data = await self.client.get_mode()
-        except Exception as err:
-            _LOGGER.debug("Operating mode not available: %s", err)
-            # Fallback mode data if not supported
-            mode_data = {
-                "mode": "Unknown",
-                "ongrid_power": es_data.get("ongrid_power"),
-                "offgrid_power": es_data.get("offgrid_power"),
-                "bat_soc": es_data.get("bat_soc"),
-            }
-
-        # Try to get energy meter data
-        # This may fail if CT sensors are not connected
-        # Note: Rate limiting is handled automatically by the API client
-        em_data = None
-        try:
-            _LOGGER.debug("Fetching energy meter status")
-            em_data = await self.client.get_em_status()
-        except Exception as err:
-            _LOGGER.debug("Energy meter not available: %s", err)
-
-        # Optional API calls, each gated by a config option. These rarely
-        # change and add ~2.5s per call to the update cycle (rate limiting),
-        # so they are off by default. Enabling all three can push the cycle
-        # past short scan intervals.
-        wifi_data = None
-        if self.enable_wifi:
+        if poll_slow:
+            # Try to get detailed battery status
+            # Venus E 3 may not support this, fallback to ES data
+            bat_data = None
             try:
-                _LOGGER.debug("Fetching WiFi status")
-                wifi_data = await self.client.get_wifi_status()
+                _LOGGER.debug("Fetching battery status")
+                bat_data = await self.client.get_bat_status()
             except Exception as err:
-                _LOGGER.debug("WiFi status not available: %s", err)
+                _LOGGER.debug("Bat.GetStatus not available, using ES data: %s", err)
+                # Fallback: Use ES data for battery sensors
+                bat_data = {
+                    "soc": es_data.get("bat_soc"),
+                    "bat_capacity": None,  # Remaining capacity not available
+                    # Other battery fields not available on Venus E 3
+                    "charg_flag": None,
+                    "dischrg_flag": None,
+                    "bat_temp": None,
+                    "rated_capacity": None,
+                }
 
-        ble_data = None
-        if self.enable_ble:
+            # Try to get operating mode
+            # May not be supported on all Venus E 3 hardware revisions
+            mode_data = None
             try:
-                _LOGGER.debug("Fetching Bluetooth status")
-                ble_data = await self.client.get_ble_status()
+                _LOGGER.debug("Fetching operating mode")
+                mode_data = await self.client.get_mode()
             except Exception as err:
-                _LOGGER.debug("Bluetooth status not available: %s", err)
+                _LOGGER.debug("Operating mode not available: %s", err)
+                # Fallback mode data if not supported
+                mode_data = {
+                    "mode": "Unknown",
+                    "ongrid_power": es_data.get("ongrid_power"),
+                    "offgrid_power": es_data.get("offgrid_power"),
+                    "bat_soc": es_data.get("bat_soc"),
+                }
 
-        pv_data = None
-        if self.enable_pv:
-            try:
-                _LOGGER.debug("Fetching PV status")
-                pv_data = await self.client.get_pv_status()
-            except Exception as err:
-                _LOGGER.debug("PV status not available: %s", err)
+            # Try to get energy meter (CT) data, unless the user turned CT off.
+            # This may also fail if no CT clamps are connected.
+            em_data = None
+            if self.enable_ct:
+                try:
+                    _LOGGER.debug("Fetching energy meter status")
+                    em_data = await self.client.get_em_status()
+                except Exception as err:
+                    _LOGGER.debug("Energy meter not available: %s", err)
+
+            # Optional API calls, each gated by a config option. These rarely
+            # change and add ~2.5s per call to the update cycle (rate limiting),
+            # so they are off by default. Enabling all three can push the cycle
+            # past short scan intervals.
+            wifi_data = None
+            if self.enable_wifi:
+                try:
+                    _LOGGER.debug("Fetching WiFi status")
+                    wifi_data = await self.client.get_wifi_status()
+                except Exception as err:
+                    _LOGGER.debug("WiFi status not available: %s", err)
+
+            ble_data = None
+            if self.enable_ble:
+                try:
+                    _LOGGER.debug("Fetching Bluetooth status")
+                    ble_data = await self.client.get_ble_status()
+                except Exception as err:
+                    _LOGGER.debug("Bluetooth status not available: %s", err)
+
+            pv_data = None
+            if self.enable_pv:
+                try:
+                    _LOGGER.debug("Fetching PV status")
+                    pv_data = await self.client.get_pv_status()
+                except Exception as err:
+                    _LOGGER.debug("PV status not available: %s", err)
+        else:
+            # Fast cycle: reuse the slow-changing values from the last full
+            # poll (prev is guaranteed set here), refreshing only SOC from the
+            # fresh ES data so the battery percentage never lags.
+            _LOGGER.debug(
+                "Tiered poll: reusing cached mode/battery/meter data "
+                "(slow endpoints every %d cycles)",
+                slow_every,
+            )
+            bat_data = dict(prev.get("bat") or {})
+            bat_data["soc"] = es_data.get("bat_soc", bat_data.get("soc"))
+            mode_data = prev.get("mode")
+            em_data = prev.get("em")
+            wifi_data = prev.get("wifi")
+            ble_data = prev.get("ble")
+            pv_data = prev.get("pv")
 
         # Fresh data reached us: clear any outstanding unreachable repair issue.
         ir.async_delete_issue(

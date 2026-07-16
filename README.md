@@ -14,7 +14,7 @@ A custom Home Assistant integration for the Marstek Venus home battery system, u
 - **Local Control**: Communicates directly with your device over your local network (no cloud required)
 - **Resilient**: Rides out short outages, marks entities unavailable during long ones, and recovers automatically; a "Last Seen" sensor tracks the last successful contact
 - **Maintainable**: Downloadable diagnostics, a repair prompt when the device is unreachable, and IP/port reconfigure without re-adding the device
-- **Configurable**: Poll interval, API timeout, and optional WiFi/Bluetooth/PV sensors
+- **Configurable**: Poll interval, API timeout, and optional CT/WiFi/Bluetooth/PV sensors
 - **Real-time Updates**: Data refreshes every 30 seconds (configurable)
 
 **Note**: This integration supports all Venus E component functionalities (Battery, ES, EM). Some sensors may show 0 values if optional features aren't connected (e.g., solar panels, load monitoring). Mode control may not be available on all Venus E 3 hardware revisions.
@@ -170,6 +170,27 @@ Complete API documentation is available in `docs/MarstekDeviceOpenApi.pdf`.
 - Verify network connectivity between Home Assistant and the device
 - Ensure the device's UDP API hasn't been disabled in the mobile app
 - Try reloading the integration from Settings > Devices & Services
+
+### Device resets or loses its settings
+
+Polling the local API too frequently can trigger a firmware "safety reset" on
+the battery: it drops its CT pairing, its Manual schedule, and the Open API
+enable toggle (which then has to be re-enabled in the app). Marstek's guidance
+is to keep at least 5-10 minutes between queries.
+
+This integration mitigates that in two ways:
+
+- The default poll interval is 5 minutes, and the recommended range is 5-10
+  minutes. Set it under **Settings > Devices & Services > Marstek Venus >
+  Configure**.
+- **Tiered polling**: SOC, power flows and energy totals (all from
+  `ES.GetStatus`) refresh every cycle, while slower data (operating mode,
+  battery detail, CT meter) refreshes at most about every 5 minutes. So a
+  shorter interval keeps the live figures fresh without the query volume that
+  causes resets.
+
+If you have the CT clamp data from another source in Home Assistant, turn off
+**Enable CT Meter Sensors** to drop one query per cycle.
 
 ## Development
 

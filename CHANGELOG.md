@@ -5,6 +5,28 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2026-07-16
+
+### Added
+
+- **Enable CT Meter Sensors** option (on by default). Turn it off to skip the
+  `EM.GetStatus` query and drop the CT sensors when that data is already
+  available elsewhere in Home Assistant, saving one request per cycle.
+
+### Changed
+
+- **Tiered polling.** `ES.GetStatus` (SOC, power flows, energy totals) is polled
+  every cycle, while the slow-changing endpoints (battery detail, operating
+  mode, CT meter) are polled at most about every 5 minutes regardless of the
+  base interval. A short interval can now keep SOC and power fresh without the
+  query volume that destabilises the device. No effect at intervals of 5 minutes
+  or more, where every cycle already polls everything.
+- **Poll interval bounds widened; default raised.** Default is now 5 minutes
+  (was 30s), maximum 1 hour (was 5 min), minimum 60s (was 15s). Polling too
+  frequently triggers a destructive firmware "safety reset" (Marstek's stated
+  API guidance is 5-10 minutes between queries), so the safer default protects
+  new installs. Existing installs keep their configured interval.
+
 ## [0.5.1] - 2026-07-16
 
 ### Fixed
@@ -161,6 +183,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Home Assistant integration for the Marstek Venus E 3: battery,
   power-flow and energy sensors, operating-mode control, and CT meter support.
 
+[0.5.2]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.4.1...v0.4.2

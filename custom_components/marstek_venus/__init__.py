@@ -19,12 +19,14 @@ from .const import (
     CONF_ENABLE_WIFI_SENSORS,
     CONF_ENABLE_BLE_SENSORS,
     CONF_ENABLE_PV_SENSORS,
+    CONF_ENABLE_CT_SENSORS,
     DEFAULT_AUTO_REASSERT,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DEFAULT_ENABLE_BLE_SENSORS,
     DEFAULT_ENABLE_PV_SENSORS,
+    DEFAULT_ENABLE_CT_SENSORS,
     DOMAIN,
     SCHEDULE_STORAGE_KEY,
     SCHEDULE_STORAGE_VERSION,
@@ -84,6 +86,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 CONF_ENABLE_WIFI_SENSORS: DEFAULT_ENABLE_WIFI_SENSORS,
                 CONF_ENABLE_BLE_SENSORS: DEFAULT_ENABLE_BLE_SENSORS,
                 CONF_ENABLE_PV_SENSORS: DEFAULT_ENABLE_PV_SENSORS,
+                CONF_ENABLE_CT_SENSORS: DEFAULT_ENABLE_CT_SENSORS,
                 CONF_AUTO_REASSERT: DEFAULT_AUTO_REASSERT,
             }
         )
@@ -94,6 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     enable_wifi = entry.options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS)
     enable_ble = entry.options.get(CONF_ENABLE_BLE_SENSORS, DEFAULT_ENABLE_BLE_SENSORS)
     enable_pv = entry.options.get(CONF_ENABLE_PV_SENSORS, DEFAULT_ENABLE_PV_SENSORS)
+    enable_ct = entry.options.get(CONF_ENABLE_CT_SENSORS, DEFAULT_ENABLE_CT_SENSORS)
     auto_reassert = entry.options.get(CONF_AUTO_REASSERT, DEFAULT_AUTO_REASSERT)
 
     # Load the HA-owned Manual schedule (source of truth; the device cannot
@@ -138,6 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         enable_wifi=enable_wifi,
         enable_ble=enable_ble,
         enable_pv=enable_pv,
+        enable_ct=enable_ct,
         schedule=stored_schedule,
         store=schedule_store,
         auto_reassert=auto_reassert,

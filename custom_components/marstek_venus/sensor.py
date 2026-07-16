@@ -22,9 +22,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_ENABLE_BLE_SENSORS,
+    CONF_ENABLE_CT_SENSORS,
     CONF_ENABLE_PV_SENSORS,
     CONF_ENABLE_WIFI_SENSORS,
     DEFAULT_ENABLE_BLE_SENSORS,
+    DEFAULT_ENABLE_CT_SENSORS,
     DEFAULT_ENABLE_PV_SENSORS,
     DEFAULT_ENABLE_WIFI_SENSORS,
     DOMAIN,
@@ -106,13 +108,6 @@ async def async_setup_entry(
         # Operating mode sensor (from ES.GetMode)
         OperatingModeSensor(coordinator, entry, device_info, main_device_info),
 
-        # Energy meter sensors (from EM.GetStatus) - CT Meter device
-        CtStateSensor(coordinator, entry, device_info, ct_device_info),
-        PhaseAPowerSensor(coordinator, entry, device_info, ct_device_info),
-        PhaseBPowerSensor(coordinator, entry, device_info, ct_device_info),
-        PhaseCPowerSensor(coordinator, entry, device_info, ct_device_info),
-        TotalCtPowerSensor(coordinator, entry, device_info, ct_device_info),
-
         # Diagnostic sensors (disabled by default)
         DiagnosticRequestCountSensor(coordinator, entry, device_info, main_device_info),
         DiagnosticErrorRateSensor(coordinator, entry, device_info, main_device_info),
@@ -126,6 +121,17 @@ async def async_setup_entry(
     # Optional sensors, gated on config options. The coordinator only fetches
     # the underlying data when the matching option is enabled, so creating
     # these entities unconditionally would leave them permanently unavailable.
+
+    # CT meter sensors (from EM.GetStatus), on by default. Turn off to skip the
+    # EM.GetStatus query entirely (fewer requests, less reset pressure) when the
+    # CT data is already available from another source in HA.
+    if entry.options.get(CONF_ENABLE_CT_SENSORS, DEFAULT_ENABLE_CT_SENSORS):
+        entities.append(CtStateSensor(coordinator, entry, device_info, ct_device_info))
+        entities.append(PhaseAPowerSensor(coordinator, entry, device_info, ct_device_info))
+        entities.append(PhaseBPowerSensor(coordinator, entry, device_info, ct_device_info))
+        entities.append(PhaseCPowerSensor(coordinator, entry, device_info, ct_device_info))
+        entities.append(TotalCtPowerSensor(coordinator, entry, device_info, ct_device_info))
+
     if entry.options.get(CONF_ENABLE_WIFI_SENSORS, DEFAULT_ENABLE_WIFI_SENSORS):
         entities.append(WifiSignalSensor(coordinator, entry, device_info, main_device_info))
         entities.append(WifiSsidSensor(coordinator, entry, device_info, main_device_info))

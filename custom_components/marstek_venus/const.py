@@ -13,21 +13,33 @@ CONF_TIMEOUT = "timeout"
 CONF_ENABLE_WIFI_SENSORS = "enable_wifi_sensors"
 CONF_ENABLE_BLE_SENSORS = "enable_ble_sensors"
 CONF_ENABLE_PV_SENSORS = "enable_pv_sensors"
+CONF_ENABLE_CT_SENSORS = "enable_ct_sensors"
 
 # Defaults
 DEFAULT_NAME = "Marstek Venus E"
 DEFAULT_PORT = 30000
-DEFAULT_SCAN_INTERVAL = 30  # seconds
+DEFAULT_SCAN_INTERVAL = 300  # seconds (5 min); conservative to avoid resets
 TIMEOUT = 10  # seconds for UDP response timeout
 DEFAULT_ENABLE_WIFI_SENSORS = False  # WiFi sensors disabled by default
 DEFAULT_ENABLE_BLE_SENSORS = False   # Bluetooth sensors disabled by default
 DEFAULT_ENABLE_PV_SENSORS = False    # PV sensors (Venus D only)
+DEFAULT_ENABLE_CT_SENSORS = True     # CT meter sensors on by default (EM.GetStatus)
 
-# Validation ranges
-MIN_SCAN_INTERVAL = 15   # seconds
-MAX_SCAN_INTERVAL = 300  # 5 minutes
-MIN_TIMEOUT = 5          # seconds
-MAX_TIMEOUT = 30         # seconds
+# Validation ranges. Polling the device too frequently triggers a destructive
+# firmware "safety reset" (it loses CT pairing, the Manual schedule and the
+# local-API enable toggle), so the floor is deliberately conservative. Marstek's
+# own guidance is 5-10 minutes between queries.
+MIN_SCAN_INTERVAL = 60    # seconds
+MAX_SCAN_INTERVAL = 3600  # 1 hour
+MIN_TIMEOUT = 5           # seconds
+MAX_TIMEOUT = 30          # seconds
+
+# Tiered polling: the slow-changing endpoints (battery detail, operating mode,
+# CT meter) refresh at most this often, independent of how fast the base
+# interval polls ES.GetStatus (which carries SOC, power and energy every cycle).
+# This keeps total query volume low at short intervals without staling the key
+# sensors. At intervals >= this target every cycle already polls everything.
+SLOW_POLL_TARGET = 300  # seconds (~5 min)
 
 # Operating modes
 MODE_AUTO = "Auto"
