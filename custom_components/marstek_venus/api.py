@@ -22,6 +22,11 @@ MIN_REQUEST_INTERVAL = 2.5
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0  # Base delay in seconds for exponential backoff
 
+# JSON-RPC parse-error code. The device intermittently answers a well-formed
+# request with this error and an id of 0 (it echoes no id when it fails to
+# parse the request). It is transient, so requests that hit it are retried.
+PARSE_ERROR_CODE = -32700
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -54,6 +59,10 @@ class MarstekConnectionError(Exception):
 
 class MarstekApiError(Exception):
     """Exception raised when API returns an error."""
+
+    def __init__(self, message: str, code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 async def discover_devices(
@@ -166,9 +175,21 @@ class MarstekProtocol(asyncio.DatagramProtocol):
             # Find the pending request matching this ID
             future = self.pending_requests.pop(request_id, None)
             if future is None:
-                # ID 0 is often used for unsolicited status updates from the device
-                # Log at debug level to avoid cluttering logs
-                if request_id == 0:
+                # The device answers with id 0 both for genuine unsolicited
+                # status pushes and when it fails to parse a request (it cannot
+                # echo an id it never read). All device I/O is serialised, so at
+                # most one request is ever in flight: an id-0 *error* is the
+                # reply to that single outstanding request. Match it so the
+                # caller fails fast and retries instead of waiting out the full
+                # timeout.
+                if (
+                    request_id == 0
+                    and "error" in response
+                    and len(self.pending_requests) == 1
+                ):
+                    _, pending = self.pending_requests.popitem()
+                    self._set_error(pending, response["error"])
+                elif request_id == 0:
                     _LOGGER.debug(
                         "Received unsolicited message from device: %s", response
                     )
@@ -180,9 +201,7 @@ class MarstekProtocol(asyncio.DatagramProtocol):
 
             # Check if response contains an error
             if "error" in response:
-                error = response["error"]
-                error_msg = f"API Error {error.get('code')}: {error.get('message')}"
-                future.set_exception(MarstekApiError(error_msg))
+                self._set_error(future, response["error"])
             else:
                 # Success! Set the result
                 future.set_result(response.get("result", {}))
@@ -191,6 +210,12 @@ class MarstekProtocol(asyncio.DatagramProtocol):
             _LOGGER.error("Failed to decode JSON response: %s", err)
         except Exception as err:
             _LOGGER.error("Error processing datagram: %s", err)
+
+    @staticmethod
+    def _set_error(future: asyncio.Future, error: Dict[str, Any]) -> None:
+        """Resolve a pending request future with the device's API error."""
+        error_msg = f"API Error {error.get('code')}: {error.get('message')}"
+        future.set_exception(MarstekApiError(error_msg, code=error.get("code")))
 
     def error_received(self, exc: Exception) -> None:
         """
@@ -517,7 +542,25 @@ class MarstekApiClient:
                     )
 
             except MarstekApiError as err:
-                # API errors (method not found, invalid request) should not be retried
+                # A -32700 parse error is the device spuriously rejecting a
+                # well-formed request; it is transient, so retry like a timeout.
+                # Other API errors (method not found, invalid params) are
+                # deterministic and must not be retried.
+                if err.code == PARSE_ERROR_CODE and attempt < retries:
+                    last_error = err
+                    delay = RETRY_BASE_DELAY * (2**attempt)
+                    _LOGGER.debug(
+                        "Request %s rejected with parse error (attempt %d/%d), "
+                        "retrying in %.1fs",
+                        method,
+                        attempt + 1,
+                        retries + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Deterministic API error, or parse error with retries exhausted.
                 duration = time.monotonic() - request_start
                 self._update_stats(
                     method, success=False, duration=duration, error=str(err)

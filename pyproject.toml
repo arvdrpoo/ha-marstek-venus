@@ -1,6 +1,6 @@
 [project]
 name = "ha-marstek-venus"
-version = "0.5.0"
+version = "0.5.1"
 description = "Home Assistant integration for Marstek Venus battery system"
 readme = "README.md"
 requires-python = ">=3.11"

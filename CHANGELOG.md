@@ -5,6 +5,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-07-16
+
+### Fixed
+
+- Recover immediately when the device rejects a well-formed request with a parse
+  error. The device intermittently answers a valid request with a `-32700` error
+  and an id of 0; that reply previously went unmatched, so the request waited out
+  its full 10-second timeout before retrying. Because all device I/O is
+  serialised, an id-0 error is now matched to the single in-flight request and
+  retried at once. This cuts the stalls and reduces spurious gaps during the
+  device's frequent local-API hiccups. Genuine unsolicited status messages are
+  unaffected.
+
 ## [0.5.0] - 2026-07-15
 
 ### Added
@@ -148,6 +161,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial Home Assistant integration for the Marstek Venus E 3: battery,
   power-flow and energy sensors, operating-mode control, and CT meter support.
 
+[0.5.1]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/arvdrpoo/ha-marstek-venus/compare/v0.3.0...v0.4.0
